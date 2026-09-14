@@ -346,7 +346,7 @@ function executePass(state, player, decision, rng, emitEvent) {
   }
 
   const loose = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
-  clearPossession(state, { contested: true });
+  clearPossession(state, { contested: false });
   setBallPosition(state, loose);
   emit(emitEvent, "PASS_FAILED", { passerId: player.id, receiverId: receiver.id, probability: finalProbability, roll, x: loose.x, y: loose.y }, player.id);
   return { executed: true, result: "failed", probability: finalProbability };
@@ -383,7 +383,7 @@ function executeDribble(state, player, decision, rng, emitEvent) {
     emit(emitEvent, "POSSESSION_WON", { side: getPlayerSide(state, opponent), playerId: opponent.id, reason: "dribble_failed" }, opponent.id);
     return { executed: true, result: "lost" };
   }
-  clearPossession(state, { contested: true });
+  clearPossession(state, { contested: false });
   emit(emitEvent, "DRIBBLE_FAILED", { playerId: player.id, probability, roll, looseBall: true }, player.id);
   return { executed: true, result: "loose" };
 }
@@ -423,7 +423,7 @@ function executeShoot(state, player, decision, rng, emitEvent) {
 
   if (roll > probability) {
     emit(emitEvent, "SHOT_MISSED", { playerId: player.id, probability, roll }, player.id);
-    clearPossession(state, { contested: true });
+    clearPossession(state, { contested: false });
     return { executed: true, result: "miss" };
   }
 
