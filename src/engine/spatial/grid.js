@@ -3,20 +3,13 @@
  *
  * Campo diviso in 12 x 8 celle.
  *
- * Serve al Match Engine per conoscere:
- *
- * - presenza dei giocatori
+ * Gestisce:
+ * - presenza giocatori
+ * - influenza territoriale
  * - spazio libero
  * - pressione
- * - controllo territoriale
- *
- * Coordinate:
- *
- * x = 0 -> porta sinistra
- * x = 1 -> porta destra
- *
- * y = 0 -> fascia alta
- * y = 1 -> fascia bassa
+ * - distanza
+ * - zona della palla
  */
 
 export const GRID_COLUMNS = 12;
@@ -34,8 +27,33 @@ function clamp(value, min, max) {
 }
 
 
+/**
+ * Distanza tra due punti del campo.
+ *
+ * Esportata perché viene utilizzata
+ * anche dalla Utility AI.
+ */
+export function distance(a, b) {
+  const dx =
+    (b?.x ?? 0) -
+    (a?.x ?? 0);
+
+  const dy =
+    (b?.y ?? 0) -
+    (a?.y ?? 0);
+
+  return Math.sqrt(
+    dx * dx +
+    dy * dy
+  );
+}
+
+
 function getCellIndex(column, row) {
-  return row * GRID_COLUMNS + column;
+  return (
+    row * GRID_COLUMNS +
+    column
+  );
 }
 
 
@@ -87,10 +105,12 @@ export function createSpatialGrid() {
       cells.push({
         column,
         row,
-        index: getCellIndex(
-          column,
-          row
-        ),
+
+        index:
+          getCellIndex(
+            column,
+            row
+          ),
 
         homePlayers: [],
         awayPlayers: [],
@@ -108,8 +128,11 @@ export function createSpatialGrid() {
   }
 
   return {
-    columns: GRID_COLUMNS,
-    rows: GRID_ROWS,
+    columns:
+      GRID_COLUMNS,
+
+    rows:
+      GRID_ROWS,
 
     cells,
 
@@ -140,70 +163,17 @@ function addPlayerToCell(
     return;
   }
 
-  if (
-    side === "home"
-  ) {
+  if (side === "home") {
     cell.homePlayers.push(
       player.id
     );
   }
 
-  if (
-    side === "away"
-  ) {
+  if (side === "away") {
     cell.awayPlayers.push(
       player.id
     );
   }
-}
-
-
-function calculateInfluence(
-  player,
-  playerSide,
-  cell
-) {
-  const playerCell = {
-    x:
-      (cell.column + 0.5) /
-      GRID_COLUMNS,
-
-    y:
-      (cell.row + 0.5) /
-      GRID_ROWS,
-  };
-
-  const dx =
-    player.position.x -
-    playerCell.x;
-
-  const dy =
-    player.position.y -
-    playerCell.y;
-
-  const distance =
-    Math.sqrt(
-      dx * dx +
-      dy * dy
-    );
-
-  const radius = 0.20;
-
-  if (
-    distance >= radius
-  ) {
-    return 0;
-  }
-
-  const proximity =
-    1 -
-    distance / radius;
-
-  const influence =
-    proximity *
-    proximity;
-
-  return influence;
 }
 
 
@@ -217,8 +187,9 @@ export function updateSpatialGrid(
     return;
   }
 
+
   /**
-   * Reset.
+   * RESET CELLE
    */
   for (
     const cell
@@ -233,11 +204,13 @@ export function updateSpatialGrid(
     cell.pressure = 0;
 
     cell.freeSpace = 1;
+
     cell.ballDistance = 1;
   }
 
+
   /**
-   * Posizione giocatori.
+   * POSIZIONI GIOCATORI
    */
   for (
     const player
@@ -254,6 +227,7 @@ export function updateSpatialGrid(
     );
   }
 
+
   for (
     const player
     of awayPlayers
@@ -269,8 +243,9 @@ export function updateSpatialGrid(
     );
   }
 
+
   /**
-   * Influenza territoriale.
+   * INFLUENZA TERRITORIALE
    */
   for (
     const cell
@@ -286,6 +261,10 @@ export function updateSpatialGrid(
         GRID_ROWS,
     };
 
+
+    /**
+     * INFLUENZA HOME
+     */
     for (
       const player
       of homePlayers
@@ -294,29 +273,23 @@ export function updateSpatialGrid(
         continue;
       }
 
-      const dx =
-        player.position.x -
-        center.x;
-
-      const dy =
-        player.position.y -
-        center.y;
-
-      const distance =
-        Math.sqrt(
-          dx * dx +
-          dy * dy
+      const playerDistance =
+        distance(
+          player.position,
+          center
         );
 
+      const radius = 0.22;
+
       if (
-        distance <
-        0.22
+        playerDistance <
+        radius
       ) {
         const influence =
           Math.pow(
             1 -
-              distance /
-                0.22,
+              playerDistance /
+                radius,
             2
           );
 
@@ -325,6 +298,10 @@ export function updateSpatialGrid(
       }
     }
 
+
+    /**
+     * INFLUENZA AWAY
+     */
     for (
       const player
       of awayPlayers
@@ -333,29 +310,23 @@ export function updateSpatialGrid(
         continue;
       }
 
-      const dx =
-        player.position.x -
-        center.x;
-
-      const dy =
-        player.position.y -
-        center.y;
-
-      const distance =
-        Math.sqrt(
-          dx * dx +
-          dy * dy
+      const playerDistance =
+        distance(
+          player.position,
+          center
         );
 
+      const radius = 0.22;
+
       if (
-        distance <
-        0.22
+        playerDistance <
+        radius
       ) {
         const influence =
           Math.pow(
             1 -
-              distance /
-                0.22,
+              playerDistance /
+                radius,
             2
           );
 
@@ -363,6 +334,7 @@ export function updateSpatialGrid(
           influence;
       }
     }
+
 
     /**
      * Limitiamo l'influenza.
@@ -381,31 +353,54 @@ export function updateSpatialGrid(
         1
       );
 
+
     /**
-     * Pressione.
+     * PRESSIONE
+     *
+     * La pressione aumenta quando
+     * entrambe le squadre sono presenti
+     * nella stessa zona.
      */
     cell.pressure =
       clamp(
-        cell.homeInfluence +
-          cell.awayInfluence,
+        (
+          cell.homeInfluence *
+          cell.awayInfluence *
+          2
+        ) +
+        (
+          Math.max(
+            cell.homeInfluence,
+            cell.awayInfluence
+          ) *
+          0.15
+        ),
         0,
         1
       );
 
+
     /**
-     * Spazio libero.
+     * SPAZIO LIBERO
      */
+    const occupation =
+      Math.max(
+        cell.homeInfluence,
+        cell.awayInfluence
+      );
+
     cell.freeSpace =
       clamp(
         1 -
-          cell.pressure,
+          occupation,
         0,
         1
       );
   }
 
+
   /**
-   * Palla.
+   * POSIZIONE PALLA
    */
   if (ball) {
     const ballCell =
@@ -415,6 +410,7 @@ export function updateSpatialGrid(
 
     grid.ballCell =
       ballCell;
+
 
     for (
       const cell
@@ -443,7 +439,15 @@ export function updateSpatialGrid(
         );
     }
   }
+  else {
+    grid.ballCell =
+      null;
+  }
 
+
+  /**
+   * INFLUENZA TOTALE
+   */
   grid.totalHomeInfluence =
     grid.cells.reduce(
       (
@@ -454,6 +458,7 @@ export function updateSpatialGrid(
         cell.homeInfluence,
       0
     );
+
 
   grid.totalAwayInfluence =
     grid.cells.reduce(
