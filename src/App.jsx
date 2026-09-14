@@ -8,8 +8,12 @@ function App() {
   const engineRef = useRef(null);
   const animationFrameRef = useRef(null);
 
+  // Contiene TUTTI gli eventi della partita.
+  const fullEventsRef = useRef([]);
+
   const [match, setMatch] = useState(null);
   const [events, setEvents] = useState([]);
+  const [copyStatus, setCopyStatus] = useState("");
 
   useEffect(() => {
     const engine = createTestEngine();
@@ -17,6 +21,16 @@ function App() {
     engineRef.current = engine;
 
     const unsubscribe = engine.subscribe((event) => {
+      /**
+       * IMPORTANTE:
+       * salviamo tutto il log senza limitarlo.
+       */
+      fullEventsRef.current.push(event);
+
+      /**
+       * Nell'interfaccia mostriamo
+       * solamente gli ultimi 30 eventi.
+       */
       setEvents((previous) => {
         const next = [...previous, event];
 
@@ -50,10 +64,19 @@ function App() {
 
         const errorEvent = {
           type: "ENGINE_ERROR",
-          matchMinute: engine.getClockState().minute,
-          matchSecond: engine.getClockState().second,
+
+          matchMinute:
+            engine.getClockState()
+              .minute,
+
+          matchSecond:
+            engine.getClockState()
+              .second,
+
           timestamp:
-            engine.getClockState().totalSimulatedSeconds,
+            engine.getClockState()
+              .totalSimulatedSeconds,
+
           payload: {
             message:
               error?.message ??
@@ -64,6 +87,14 @@ function App() {
               "",
           },
         };
+
+        /**
+         * Anche gli errori finiscono
+         * nel log completo.
+         */
+        fullEventsRef.current.push(
+          errorEvent
+        );
 
         setEvents((previous) => {
           const next = [
@@ -115,6 +146,163 @@ function App() {
     };
   }, []);
 
+  /**
+   * Copia tutto il log della partita.
+   */
+  async function copyFullMatchLog() {
+    const engine =
+      engineRef.current;
+
+    const currentState =
+      engine?.getState?.();
+
+    const currentClock =
+      engine?.getClockState?.();
+
+    const log = {
+      exportVersion: 1,
+
+      game: {
+        name: "Calcio Manager",
+        type: "Match Engine Test",
+      },
+
+      match: {
+        id:
+          currentState?.id ??
+          null,
+
+        seed:
+          currentState?.seed ??
+          null,
+
+        phase:
+          currentState?.phase ??
+          null,
+
+        possession:
+          currentState?.possession ??
+          null,
+
+        score:
+          currentState?.score ??
+          null,
+
+        status:
+          currentState?.matchStatus ??
+          null,
+      },
+
+      clock:
+        currentClock ??
+        null,
+
+      teams:
+        currentState?.teams ??
+        null,
+
+      ball:
+        currentState?.ball ??
+        null,
+
+      statistics:
+        currentState?.statistics ??
+        null,
+
+      events:
+        fullEventsRef.current,
+    };
+
+    const text =
+      JSON.stringify(
+        log,
+        null,
+        2
+      );
+
+    try {
+      await navigator.clipboard.writeText(
+        text
+      );
+
+      setCopyStatus(
+        `LOG COPIATO — ${fullEventsRef.current.length} eventi`
+      );
+
+      setTimeout(() => {
+        setCopyStatus("");
+      }, 3000);
+    } catch (error) {
+      console.error(
+        "COPY ERROR:",
+        error
+      );
+
+      /**
+       * Fallback per browser/dispositivi
+       * dove Clipboard API non è disponibile.
+       */
+      try {
+        const textarea =
+          document.createElement(
+            "textarea"
+          );
+
+        textarea.value = text;
+
+        textarea.style.position =
+          "fixed";
+
+        textarea.style.left =
+          "-9999px";
+
+        document.body.appendChild(
+          textarea
+        );
+
+        textarea.focus();
+        textarea.select();
+
+        document.execCommand(
+          "copy"
+        );
+
+        document.body.removeChild(
+          textarea
+        );
+
+        setCopyStatus(
+          `LOG COPIATO — ${fullEventsRef.current.length} eventi`
+        );
+
+        setTimeout(() => {
+          setCopyStatus("");
+        }, 3000);
+      } catch (fallbackError) {
+        console.error(
+          "COPY FALLBACK ERROR:",
+          fallbackError
+        );
+
+        setCopyStatus(
+          "ERRORE NELLA COPIA DEL LOG"
+        );
+      }
+    }
+  }
+
+  /**
+   * Cancella il log locale
+   * e prepara una nuova partita.
+   *
+   * Per ora il pulsante non viene
+   * mostrato: lo teniamo disponibile
+   * per il sistema di restart futuro.
+   */
+  function getFullLogSize() {
+    return fullEventsRef.current.length;
+  }
+
   if (!match) {
     return (
       <main className="app">
@@ -151,7 +339,6 @@ function App() {
   return (
     <main className="app">
       <div className="match-test">
-
         <header className="match-header">
           <span>
             CALCIO MANAGER
@@ -163,7 +350,6 @@ function App() {
         </header>
 
         <section className="scoreboard">
-
           <div className="team">
             <small>
               CASA
@@ -185,7 +371,10 @@ function App() {
               {clock.minute}'
               {String(
                 clock.second
-              ).padStart(2, "0")}
+              ).padStart(
+                2,
+                "0"
+              )}
             </span>
           </div>
 
@@ -198,11 +387,9 @@ function App() {
               {awayTeam.shortName}
             </h2>
           </div>
-
         </section>
 
         <section className="engine-info">
-
           <div>
             <span>
               STATO
@@ -242,11 +429,9 @@ function App() {
               {match.seed}
             </strong>
           </div>
-
         </section>
 
         <section className="controls">
-
           <button
             onClick={() =>
               engineRef.current?.pause()
@@ -265,7 +450,9 @@ function App() {
 
           <button
             onClick={() =>
-              engineRef.current?.setSpeed(1)
+              engineRef.current?.setSpeed(
+                1
+              )
             }
           >
             1x
@@ -273,7 +460,9 @@ function App() {
 
           <button
             onClick={() =>
-              engineRef.current?.setSpeed(2)
+              engineRef.current?.setSpeed(
+                2
+              )
             }
           >
             2x
@@ -281,7 +470,9 @@ function App() {
 
           <button
             onClick={() =>
-              engineRef.current?.setSpeed(4)
+              engineRef.current?.setSpeed(
+                4
+              )
             }
           >
             4x
@@ -289,16 +480,102 @@ function App() {
 
           <button
             onClick={() =>
-              engineRef.current?.setSpeed(8)
+              engineRef.current?.setSpeed(
+                8
+              )
             }
           >
             8x
           </button>
+        </section>
 
+        {/* ========================= */}
+        {/* LOG EXPORT */}
+        {/* ========================= */}
+
+        <section className="event-log">
+          <div
+            style={{
+              display: "flex",
+              justifyContent:
+                "space-between",
+              alignItems: "center",
+              gap: "15px",
+              flexWrap: "wrap",
+            }}
+          >
+            <div>
+              <h3
+                style={{
+                  marginBottom:
+                    "5px",
+                }}
+              >
+                LOG PARTITA
+              </h3>
+
+              <p
+                style={{
+                  margin: 0,
+                  color:
+                    "#77857e",
+                  fontSize:
+                    "12px",
+                }}
+              >
+                {getFullLogSize()} eventi
+                registrati
+              </p>
+            </div>
+
+            <button
+              onClick={
+                copyFullMatchLog
+              }
+              style={{
+                border:
+                  "1px solid #304238",
+                borderRadius:
+                  "9px",
+                padding:
+                  "10px 16px",
+                background:
+                  "#132019",
+                color:
+                  "white",
+                cursor:
+                  "pointer",
+                fontWeight:
+                  "600",
+              }}
+            >
+              📋 COPIA LOG COMPLETO
+            </button>
+          </div>
+
+          {copyStatus && (
+            <div
+              style={{
+                marginTop:
+                  "12px",
+                padding:
+                  "10px 12px",
+                borderRadius:
+                  "8px",
+                background:
+                  "#111f18",
+                color:
+                  "#7dff9b",
+                fontSize:
+                  "13px",
+              }}
+            >
+              {copyStatus}
+            </div>
+          )}
         </section>
 
         <section className="teams">
-
           <div>
             <h3>
               {homeTeam.name}
@@ -340,7 +617,6 @@ function App() {
               {awayTeam.startingXI.length}
             </p>
           </div>
-
         </section>
 
         {hasEngineError && (
@@ -362,7 +638,10 @@ function App() {
                   "ENGINE_ERROR"
               )
               .map(
-                (event, index) => (
+                (
+                  event,
+                  index
+                ) => (
                   <div
                     key={`error-${index}`}
                     style={{
@@ -409,13 +688,11 @@ function App() {
         )}
 
         <section className="event-log">
-
           <h3>
-            EVENTI ENGINE
+            ULTIMI EVENTI ENGINE
           </h3>
 
           <div className="events">
-
             {events
               .slice()
               .reverse()
@@ -428,9 +705,12 @@ function App() {
                     key={`${event.id ?? event.timestamp}-${index}`}
                   >
                     <span>
-                      {event.matchMinute ?? 0}'
+                      {event.matchMinute ??
+                        0}
+                      '
                       {String(
-                        event.matchSecond ?? 0
+                        event.matchSecond ??
+                          0
                       ).padStart(
                         2,
                         "0"
@@ -443,11 +723,8 @@ function App() {
                   </div>
                 )
               )}
-
           </div>
-
         </section>
-
       </div>
     </main>
   );
