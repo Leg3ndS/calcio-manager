@@ -2535,6 +2535,7 @@ export {
   clearPossession,
   processPossession,
   syncOwnerFromState,
+  getPlayerSide,
 };
 
 export default {
@@ -2544,4 +2545,5 @@ export default {
   clearPossession,
   processPossession,
   syncOwnerFromState,
+  getPlayerSide,
 };
