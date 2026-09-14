@@ -1,38 +1,27 @@
 /**
  * EVENT MODEL
  *
- * Gli eventi rappresentano ciò che accade durante una partita.
+ * Gli eventi sono la cronaca strutturata della simulazione.
  *
- * Un evento deve essere:
+ * Ogni evento contiene:
+ * - id
+ * - tick
+ * - matchTime
+ * - type
+ * - actors
+ * - causedBy
+ * - payload
  *
- * - identificabile
- * - riproducibile
- * - collegabile ad altri eventi
- * - utilizzabile da cronaca/statistiche/highlights/replay
+ * Gli ID sono deterministici.
  */
 
-function createId(prefix = "event") {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return `${prefix}_${crypto.randomUUID()}`;
-  }
-
-  return `${prefix}_${Date.now()}_${Math.random()
-    .toString(36)
-    .slice(2)}`;
-}
-
-/**
- * Tipi di evento iniziali.
- */
 export const EVENT_TYPES = {
   MATCH_STARTED: "MATCH_STARTED",
   ENGINE_TICK: "ENGINE_TICK",
 
   POSSESSION_WON: "POSSESSION_WON",
   POSSESSION_LOST: "POSSESSION_LOST",
+  POSSESSION_CONTESTED: "POSSESSION_CONTESTED",
 
   PLAYER_MOVE: "PLAYER_MOVE",
 
@@ -41,10 +30,6 @@ export const EVENT_TYPES = {
   PASS_FAILED: "PASS_FAILED",
 
   RECEIVE: "RECEIVE",
-
-  DRIBBLE_ATTEMPT: "DRIBBLE_ATTEMPT",
-  DRIBBLE_SUCCESS: "DRIBBLE_SUCCESS",
-  DRIBBLE_FAILED: "DRIBBLE_FAILED",
 
   PRESSURE: "PRESSURE",
 
@@ -86,16 +71,23 @@ export const EVENT_TYPES = {
   FULL_TIME: "FULL_TIME",
 };
 
-/**
- * Crea un evento.
- */
+export function createEventLog() {
+  return {
+    events: [],
+    lastEventId: null,
+    sequence: 0,
+  };
+}
+
 export function createMatchEvent({
+  matchId = "match",
   tick = 0,
   matchTime = null,
   type,
   actors = [],
   causedBy = null,
   payload = {},
+  sequence = 0,
 } = {}) {
   if (!type) {
     throw new Error(
@@ -103,8 +95,11 @@ export function createMatchEvent({
     );
   }
 
+  const id =
+    `${matchId}_t${tick}_e${sequence}`;
+
   return {
-    id: createId("event"),
+    id,
 
     tick,
 
@@ -124,41 +119,6 @@ export function createMatchEvent({
   };
 }
 
-/**
- * Crea un evento collegato a un altro evento.
- */
-export function createCausedEvent({
-  previousEvent,
-  tick,
-  matchTime,
-  type,
-  actors = [],
-  payload = {},
-}) {
-  return createMatchEvent({
-    tick,
-    matchTime,
-    type,
-    actors,
-    causedBy:
-      previousEvent?.id ?? null,
-    payload,
-  });
-}
-
-/**
- * Event log della partita.
- */
-export function createEventLog() {
-  return {
-    events: [],
-    lastEventId: null,
-  };
-}
-
-/**
- * Inserisce un evento nel log.
- */
 export function appendEvent(
   eventLog,
   event
@@ -168,12 +128,11 @@ export function appendEvent(
   eventLog.lastEventId =
     event.id;
 
+  eventLog.sequence += 1;
+
   return eventLog;
 }
 
-/**
- * Recupera un evento per ID.
- */
 export function findEvent(
   eventLog,
   eventId
@@ -186,10 +145,6 @@ export function findEvent(
   );
 }
 
-/**
- * Recupera tutti gli eventi causati
- * direttamente da un evento.
- */
 export function getCausedEvents(
   eventLog,
   eventId
@@ -200,21 +155,6 @@ export function getCausedEvents(
   );
 }
 
-/**
- * Ricostruisce una catena causale.
- *
- * Esempio:
- *
- * PRESSIONE
- * ↓
- * PASSAGGIO FALLITO
- * ↓
- * INTERCETTO
- * ↓
- * TIRO
- * ↓
- * GOL
- */
 export function getEventChain(
   eventLog,
   eventId
