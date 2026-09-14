@@ -177,14 +177,30 @@ export class MatchEngine {
         ] ??
         null;
 
+      /**
+       * ATTENZIONE — conversione di scala:
+       *
+       * Le formazioni (teamModel.js / FORMATIONS)
+       * sono definite su scala 0-100 (comoda per
+       * l'editor tattico grafico).
+       *
+       * Il motore runtime (griglia, movimento,
+       * world state) lavora invece su scala
+       * normalizzata 0-1.
+       *
+       * Senza questa conversione, valori come
+       * x:82, y:92 venivano clampati direttamente
+       * a 0.97, facendo collassare tutti i giocatori
+       * nello stesso angolo di campo.
+       */
       let initialPosition =
         tacticalPosition
           ? {
               x:
-                tacticalPosition.x,
+                tacticalPosition.x / 100,
 
               y:
-                tacticalPosition.y,
+                tacticalPosition.y / 100,
             }
           : null;
 
@@ -278,6 +294,27 @@ export class MatchEngine {
         x: 0,
         y: 0,
       };
+
+      /**
+       * ATTENZIONE — campo runtime `role`:
+       *
+       * Il Player Model definisce solo `primaryRole`.
+       * playerMovement.js e utilityAI.js leggono invece
+       * `player.role`, che senza questa riga non esiste
+       * mai a runtime: tutta la differenziazione di
+       * comportamento per ruolo (es. difensori meno
+       * aggressivi verso la palla, attaccanti che
+       * cercano più spazio) ricadeva sempre sul
+       * fallback generico.
+       *
+       * Preferiamo il ruolo assegnato dallo slot
+       * tattico (può differire dal ruolo naturale,
+       * es. un centrocampista schierato mediano),
+       * con fallback sul ruolo primario del giocatore.
+       */
+      player.role =
+        tacticalPosition?.role ??
+        player.primaryRole;
     }
 
     /**
