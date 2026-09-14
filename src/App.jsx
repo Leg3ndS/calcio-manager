@@ -1,119 +1,57 @@
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
-/*
- * ============================================================
- * CALCIO MANAGER - MATCH ENGINE V0.2
- * ============================================================
- *
- * 90 minuti simulati ≈ 4 minuti e 30 secondi reali a 1x.
- *
- * 1x = 20 secondi di partita per ogni secondo reale
- * 2x = 40 secondi
- * 4x = 80 secondi
- *
- * Questa versione è ancora un prototipo del Match Engine.
- * La struttura è già pensata per aggiungere successivamente:
- * - tattiche reali
- * - stamina
- * - contrasti
- * - dribbling
- * - tiri
- * - IA
- * - xG
- * - eventi
- * ============================================================
- */
+const GAME_SPEED = 20;
+const MATCH_LENGTH = 90 * 60;
 
-const GAME_SECONDS_PER_REAL_SECOND = 20;
-
-const FORMATION_HOME = [
-  { x: 7, y: 50 },
-  { x: 21, y: 16 },
-  { x: 20, y: 37 },
-  { x: 20, y: 63 },
-  { x: 21, y: 84 },
-  { x: 37, y: 50 },
-  { x: 46, y: 30 },
-  { x: 46, y: 70 },
-  { x: 62, y: 18 },
-  { x: 61, y: 50 },
-  { x: 62, y: 82 },
+const HOME_FORMATION = [
+  { x: 7, y: 50 },  // POR
+  { x: 21, y: 84 }, // TD
+  { x: 20, y: 63 }, // DC
+  { x: 20, y: 37 }, // DC
+  { x: 21, y: 16 }, // TS
+  { x: 37, y: 50 }, // MED
+  { x: 46, y: 70 }, // CC
+  { x: 46, y: 30 }, // CC
+  { x: 62, y: 84 }, // AD
+  { x: 61, y: 50 }, // TQ
+  { x: 62, y: 16 }, // AS
 ];
 
-const FORMATION_AWAY = [
-  { x: 93, y: 50 },
-  { x: 79, y: 84 },
-  { x: 80, y: 63 },
-  { x: 80, y: 37 },
-  { x: 79, y: 16 },
-  { x: 63, y: 50 },
-  { x: 54, y: 70 },
-  { x: 54, y: 30 },
-  { x: 38, y: 82 },
-  { x: 39, y: 50 },
-  { x: 38, y: 18 },
+const AWAY_FORMATION = [
+  { x: 93, y: 50 }, // POR
+  { x: 79, y: 16 }, // TD
+  { x: 80, y: 37 }, // DC
+  { x: 80, y: 63 }, // DC
+  { x: 79, y: 84 }, // TS
+  { x: 63, y: 50 }, // MED
+  { x: 54, y: 30 }, // CC
+  { x: 54, y: 70 }, // CC
+  { x: 38, y: 16 }, // AD
+  { x: 39, y: 50 }, // TQ
+  { x: 38, y: 84 }, // AS
 ];
 
-const createPlayer = ({
-  id,
-  name,
-  number,
-  team,
-  role,
-  x,
-  y,
-  pace,
-  acceleration,
-  shooting,
-  finishing,
-  passing,
-  dribbling,
-  tackling,
-  marking,
-  strength,
-  jumping,
-  stamina,
-  positioning,
-  decisions,
-  mentality,
-}) => ({
-  id,
-  name,
-  number,
-  team,
-  role,
-  x,
-  y,
-  baseX: x,
-  baseY: y,
-  pace,
-  acceleration,
-  shooting,
-  finishing,
-  passing,
-  dribbling,
-  tackling,
-  marking,
-  strength,
-  jumping,
-  stamina,
-  positioning,
-  decisions,
-  mentality,
-});
+function createPlayer(data) {
+  return {
+    ...data,
+    baseX: data.x,
+    baseY: data.y,
+  };
+}
 
 const initialPlayers = [
   // =========================
   // NAPOLI
   // =========================
+
   createPlayer({
     id: 1,
     name: "Alex",
     number: 1,
     team: "home",
     role: "POR",
-    ...FORMATION_HOME[0],
+    ...HOME_FORMATION[0],
     pace: 70,
     acceleration: 65,
     shooting: 15,
@@ -136,7 +74,7 @@ const initialPlayers = [
     number: 2,
     team: "home",
     role: "TD",
-    ...FORMATION_HOME[1],
+    ...HOME_FORMATION[1],
     pace: 84,
     acceleration: 87,
     shooting: 48,
@@ -159,7 +97,7 @@ const initialPlayers = [
     number: 3,
     team: "home",
     role: "DC",
-    ...FORMATION_HOME[2],
+    ...HOME_FORMATION[2],
     pace: 71,
     acceleration: 64,
     shooting: 28,
@@ -182,7 +120,7 @@ const initialPlayers = [
     number: 4,
     team: "home",
     role: "DC",
-    ...FORMATION_HOME[3],
+    ...HOME_FORMATION[3],
     pace: 68,
     acceleration: 61,
     shooting: 25,
@@ -205,7 +143,7 @@ const initialPlayers = [
     number: 5,
     team: "home",
     role: "TS",
-    ...FORMATION_HOME[4],
+    ...HOME_FORMATION[4],
     pace: 86,
     acceleration: 89,
     shooting: 42,
@@ -228,7 +166,7 @@ const initialPlayers = [
     number: 6,
     team: "home",
     role: "MED",
-    ...FORMATION_HOME[5],
+    ...HOME_FORMATION[5],
     pace: 73,
     acceleration: 70,
     shooting: 48,
@@ -251,7 +189,7 @@ const initialPlayers = [
     number: 7,
     team: "home",
     role: "CC",
-    ...FORMATION_HOME[6],
+    ...HOME_FORMATION[6],
     pace: 83,
     acceleration: 86,
     shooting: 72,
@@ -274,7 +212,7 @@ const initialPlayers = [
     number: 8,
     team: "home",
     role: "CC",
-    ...FORMATION_HOME[7],
+    ...HOME_FORMATION[7],
     pace: 81,
     acceleration: 79,
     shooting: 69,
@@ -297,7 +235,7 @@ const initialPlayers = [
     number: 9,
     team: "home",
     role: "AD",
-    ...FORMATION_HOME[8],
+    ...HOME_FORMATION[8],
     pace: 95,
     acceleration: 97,
     shooting: 82,
@@ -320,7 +258,7 @@ const initialPlayers = [
     number: 10,
     team: "home",
     role: "TQ",
-    ...FORMATION_HOME[9],
+    ...HOME_FORMATION[9],
     pace: 88,
     acceleration: 90,
     shooting: 87,
@@ -343,7 +281,7 @@ const initialPlayers = [
     number: 11,
     team: "home",
     role: "AS",
-    ...FORMATION_HOME[10],
+    ...HOME_FORMATION[10],
     pace: 93,
     acceleration: 95,
     shooting: 84,
@@ -363,13 +301,14 @@ const initialPlayers = [
   // =========================
   // JUVENTUS
   // =========================
+
   createPlayer({
     id: 12,
     name: "Mike",
     number: 1,
     team: "away",
     role: "POR",
-    ...FORMATION_AWAY[0],
+    ...AWAY_FORMATION[0],
     pace: 68,
     acceleration: 63,
     shooting: 15,
@@ -392,7 +331,7 @@ const initialPlayers = [
     number: 2,
     team: "away",
     role: "TD",
-    ...FORMATION_AWAY[1],
+    ...AWAY_FORMATION[1],
     pace: 81,
     acceleration: 84,
     shooting: 40,
@@ -415,7 +354,7 @@ const initialPlayers = [
     number: 3,
     team: "away",
     role: "DC",
-    ...FORMATION_AWAY[2],
+    ...AWAY_FORMATION[2],
     pace: 72,
     acceleration: 65,
     shooting: 27,
@@ -438,7 +377,7 @@ const initialPlayers = [
     number: 4,
     team: "away",
     role: "DC",
-    ...FORMATION_AWAY[3],
+    ...AWAY_FORMATION[3],
     pace: 70,
     acceleration: 62,
     shooting: 24,
@@ -461,7 +400,7 @@ const initialPlayers = [
     number: 5,
     team: "away",
     role: "TS",
-    ...FORMATION_AWAY[4],
+    ...AWAY_FORMATION[4],
     pace: 82,
     acceleration: 85,
     shooting: 39,
@@ -484,7 +423,7 @@ const initialPlayers = [
     number: 6,
     team: "away",
     role: "MED",
-    ...FORMATION_AWAY[5],
+    ...AWAY_FORMATION[5],
     pace: 75,
     acceleration: 71,
     shooting: 51,
@@ -507,7 +446,7 @@ const initialPlayers = [
     number: 7,
     team: "away",
     role: "CC",
-    ...FORMATION_AWAY[6],
+    ...AWAY_FORMATION[6],
     pace: 82,
     acceleration: 84,
     shooting: 71,
@@ -530,7 +469,7 @@ const initialPlayers = [
     number: 8,
     team: "away",
     role: "CC",
-    ...FORMATION_AWAY[7],
+    ...AWAY_FORMATION[7],
     pace: 80,
     acceleration: 77,
     shooting: 66,
@@ -553,7 +492,7 @@ const initialPlayers = [
     number: 9,
     team: "away",
     role: "AD",
-    ...FORMATION_AWAY[8],
+    ...AWAY_FORMATION[8],
     pace: 94,
     acceleration: 96,
     shooting: 83,
@@ -576,7 +515,7 @@ const initialPlayers = [
     number: 10,
     team: "away",
     role: "TQ",
-    ...FORMATION_AWAY[9],
+    ...AWAY_FORMATION[9],
     pace: 86,
     acceleration: 89,
     shooting: 84,
@@ -599,7 +538,7 @@ const initialPlayers = [
     number: 11,
     team: "away",
     role: "AS",
-    ...FORMATION_AWAY[10],
+    ...AWAY_FORMATION[10],
     pace: 91,
     acceleration: 94,
     shooting: 80,
@@ -624,162 +563,182 @@ const distance = (a, b) =>
   Math.hypot(a.x - b.x, a.y - b.y);
 
 function calculateOverall(player) {
-  const roleWeights = {
-    POR: [
-      ["positioning", 0.25],
-      ["decisions", 0.18],
-      ["passing", 0.14],
-      ["mentality", 0.14],
-      ["jumping", 0.1],
-      ["strength", 0.1],
-      ["pace", 0.09],
-    ],
-    DC: [
-      ["tackling", 0.2],
-      ["marking", 0.2],
-      ["positioning", 0.17],
-      ["strength", 0.12],
-      ["jumping", 0.1],
-      ["decisions", 0.09],
-      ["passing", 0.07],
-      ["pace", 0.05],
-    ],
-    MED: [
-      ["passing", 0.2],
-      ["decisions", 0.18],
-      ["positioning", 0.15],
-      ["tackling", 0.13],
-      ["stamina", 0.1],
-      ["mentality", 0.1],
-      ["dribbling", 0.08],
-      ["pace", 0.06],
-    ],
-    CC: [
-      ["passing", 0.18],
-      ["dribbling", 0.16],
-      ["decisions", 0.15],
-      ["stamina", 0.12],
-      ["shooting", 0.11],
-      ["positioning", 0.1],
-      ["pace", 0.09],
-      ["mentality", 0.09],
-    ],
-    TQ: [
-      ["passing", 0.2],
-      ["dribbling", 0.19],
-      ["decisions", 0.18],
-      ["shooting", 0.13],
-      ["finishing", 0.1],
-      ["positioning", 0.08],
-      ["pace", 0.06],
-      ["mentality", 0.06],
-    ],
-    AD: [
-      ["pace", 0.18],
-      ["acceleration", 0.16],
-      ["dribbling", 0.17],
-      ["finishing", 0.13],
-      ["shooting", 0.1],
-      ["passing", 0.08],
-      ["positioning", 0.08],
-      ["decisions", 0.1],
-    ],
-    AS: [
-      ["pace", 0.18],
-      ["acceleration", 0.16],
-      ["dribbling", 0.17],
-      ["finishing", 0.13],
-      ["shooting", 0.1],
-      ["passing", 0.08],
-      ["positioning", 0.08],
-      ["decisions", 0.1],
-    ],
-    TD: [
-      ["pace", 0.14],
-      ["acceleration", 0.12],
-      ["tackling", 0.15],
-      ["marking", 0.14],
-      ["passing", 0.12],
-      ["stamina", 0.1],
-      ["positioning", 0.11],
-      ["decisions", 0.12],
-    ],
-    TS: [
-      ["pace", 0.14],
-      ["acceleration", 0.12],
-      ["tackling", 0.15],
-      ["marking", 0.14],
-      ["passing", 0.12],
-      ["stamina", 0.1],
-      ["positioning", 0.11],
-      ["decisions", 0.12],
-    ],
-  };
+  const technical =
+    player.passing +
+    player.dribbling +
+    player.shooting;
 
-  const weights = roleWeights[player.role] || roleWeights.CC;
+  const physical =
+    player.pace +
+    player.acceleration +
+    player.stamina +
+    player.strength;
+
+  const mental =
+    player.decisions +
+    player.positioning +
+    player.mentality;
+
+  const defensive =
+    player.tackling +
+    player.marking;
+
+  if (player.role === "POR") {
+    return Math.round(
+      (player.positioning * 0.25 +
+        player.decisions * 0.2 +
+        player.passing * 0.15 +
+        player.mentality * 0.15 +
+        player.jumping * 0.1 +
+        player.strength * 0.1 +
+        player.pace * 0.05)
+    );
+  }
+
+  if (
+    player.role === "DC"
+  ) {
+    return Math.round(
+      defensive * 0.25 +
+        player.positioning * 0.2 +
+        player.strength * 0.15 +
+        player.jumping * 0.1 +
+        player.passing * 0.1 +
+        player.decisions * 0.1 +
+        player.pace * 0.1
+    );
+  }
+
+  if (
+    player.role === "TD" ||
+    player.role === "TS"
+  ) {
+    return Math.round(
+      physical * 0.18 +
+        defensive * 0.16 +
+        player.passing * 0.14 +
+        player.positioning * 0.12 +
+        player.decisions * 0.12 +
+        player.dribbling * 0.1 +
+        player.mentality * 0.08 +
+        player.shooting * 0.1
+    );
+  }
+
+  if (
+    player.role === "AD" ||
+    player.role === "AS"
+  ) {
+    return Math.round(
+      player.pace * 0.17 +
+        player.acceleration * 0.15 +
+        player.dribbling * 0.2 +
+        player.finishing * 0.14 +
+        player.shooting * 0.1 +
+        player.passing * 0.08 +
+        player.decisions * 0.08 +
+        player.mentality * 0.08
+    );
+  }
 
   return Math.round(
-    weights.reduce(
-      (total, [attribute, weight]) =>
-        total + player[attribute] * weight,
-      0
-    )
+    technical * 0.3 +
+      mental * 0.25 +
+      physical * 0.2 +
+      defensive * 0.1 +
+      player.shooting * 0.15
   );
 }
 
 function App() {
-  const [players, setPlayers] = useState(initialPlayers);
+  const [players, setPlayers] =
+    useState(initialPlayers);
+
   const [ball, setBall] = useState({
     x: 50,
     y: 50,
     targetX: 50,
     targetY: 50,
     owner: null,
+    mode: "free",
   });
 
-  const [score, setScore] = useState({
-    home: 0,
-    away: 0,
-  });
+  const [score, setScore] =
+    useState({
+      home: 0,
+      away: 0,
+    });
 
-  const [time, setTime] = useState(0);
-  const [speed, setSpeed] = useState(1);
-  const [paused, setPaused] = useState(true);
-  const [selectedPlayer, setSelectedPlayer] = useState(null);
+  const [time, setTime] =
+    useState(0);
 
-  const [matchStats, setMatchStats] = useState({
-    homePossession: 50,
-    awayPossession: 50,
-    homeShots: 0,
-    awayShots: 0,
-    homePasses: 0,
-    awayPasses: 0,
-    homeXg: 0,
-    awayXg: 0,
-  });
+  const [paused, setPaused] =
+    useState(true);
 
-  const playersRef = useRef(initialPlayers);
-  const ballRef = useRef({
-    x: 50,
-    y: 50,
-    targetX: 50,
-    targetY: 50,
-    owner: null,
-  });
+  const [speed, setSpeed] =
+    useState(1);
 
-  const possessionRef = useRef("home");
-  const lastActionRef = useRef(0);
-  const lastStatUpdateRef = useRef(0);
-  const lastTimeRef = useRef(performance.now());
+  const [selectedPlayer, setSelectedPlayer] =
+    useState(null);
+
+  const [matchStats, setMatchStats] =
+    useState({
+      homePossession: 50,
+      awayPossession: 50,
+      homeShots: 0,
+      awayShots: 0,
+      homePasses: 0,
+      awayPasses: 0,
+      homeXg: 0,
+      awayXg: 0,
+    });
+
+  const playersRef =
+    useRef(initialPlayers);
+
+  const ballRef =
+    useRef({
+      x: 50,
+      y: 50,
+      targetX: 50,
+      targetY: 50,
+      owner: null,
+      mode: "free",
+    });
+
+  const possessionRef =
+    useRef("home");
+
+  const lastActionRef =
+    useRef(0);
+
+  const lastShotRef =
+    useRef(0);
+
+  const lastPossessionRef =
+    useRef(0);
+
+  const animationRef =
+    useRef(null);
+
+  const lastFrameRef =
+    useRef(performance.now());
+
+  /*
+   * ==========================================================
+   * RESET
+   * ==========================================================
+   */
 
   const resetMatch = () => {
-    const resetPlayers = initialPlayers.map((player) => ({
-      ...player,
-      x: player.baseX,
-      y: player.baseY,
-    }));
-
-    playersRef.current = resetPlayers;
+    const resetPlayers =
+      initialPlayers.map(
+        (player) => ({
+          ...player,
+          x: player.baseX,
+          y: player.baseY,
+        })
+      );
 
     const resetBall = {
       x: 50,
@@ -787,9 +746,14 @@ function App() {
       targetX: 50,
       targetY: 50,
       owner: null,
+      mode: "free",
     };
 
-    ballRef.current = resetBall;
+    playersRef.current =
+      resetPlayers;
+
+    ballRef.current =
+      resetBall;
 
     setPlayers(resetPlayers);
     setBall(resetBall);
@@ -810,531 +774,946 @@ function App() {
       awayXg: 0,
     });
 
-    possessionRef.current = "home";
+    possessionRef.current =
+      "home";
+
     lastActionRef.current = 0;
-    lastStatUpdateRef.current = 0;
+    lastShotRef.current = 0;
+    lastPossessionRef.current = 0;
 
     setTime(0);
     setPaused(true);
   };
 
+  /*
+   * ==========================================================
+   * MATCH ENGINE
+   * ==========================================================
+   */
+
   useEffect(() => {
     if (paused) {
-      lastTimeRef.current = performance.now();
+      lastFrameRef.current =
+        performance.now();
+
       return;
     }
 
-    let animationFrame;
-
     const animate = (now) => {
-      const realDelta = Math.min(
-        (now - lastTimeRef.current) / 1000,
-        0.05
-      );
+      const realDelta =
+        Math.min(
+          (now -
+            lastFrameRef.current) /
+            1000,
+          0.04
+        );
 
-      lastTimeRef.current = now;
+      lastFrameRef.current =
+        now;
 
       const gameDelta =
         realDelta *
-        GAME_SECONDS_PER_REAL_SECOND *
+        GAME_SPEED *
         speed;
 
-      setTime((currentTime) => {
-        const nextTime = currentTime + gameDelta;
-
-        if (nextTime >= 90 * 60) {
-          setPaused(true);
-          return 90 * 60;
-        }
-
-        return nextTime;
-      });
-
-      const currentPlayers = playersRef.current;
-      const currentBall = ballRef.current;
-
       /*
-       * ========================================================
-       * MOVIMENTO DE SQUADRA
-       * ========================================================
+       * ------------------------------------------------------
+       * CRONOMETRO
+       * ------------------------------------------------------
        */
 
-      const newPlayers = currentPlayers.map((player) => {
-        const formation =
-          player.team === "home"
-            ? FORMATION_HOME[player.id - 1]
-            : FORMATION_AWAY[player.id - 12];
-
-        let targetX = formation.x;
-        let targetY = formation.y;
-
-        /*
-         * La squadra segue la posizione del pallone.
-         * L'effetto è volutamente moderato per mantenere
-         * la struttura tattica.
-         */
-        const ballPullX =
-          (currentBall.x - 50) * 0.13;
-
-        const ballPullY =
-          (currentBall.y - 50) * 0.09;
-
-        if (player.team === "home") {
-          targetX += ballPullX;
-        } else {
-          targetX += ballPullX;
-        }
-
-        targetY += ballPullY;
-
-        /*
-         * Il giocatore più vicino alla palla tende ad
-         * avvicinarsi maggiormente.
-         */
-        const playerDistance = distance(player, currentBall);
+      setTime((current) => {
+        const next =
+          current + gameDelta;
 
         if (
-          playerDistance < 20 &&
-          player.role !== "POR"
+          next >= MATCH_LENGTH
         ) {
-          targetX +=
-            (currentBall.x - player.x) * 0.18;
-
-          targetY +=
-            (currentBall.y - player.y) * 0.18;
+          setPaused(true);
+          return MATCH_LENGTH;
         }
 
-        /*
-         * Movimento individuale.
-         *
-         * Il movimento sinusoidale rende le pedine
-         * continuamente vive senza farle sembrare
-         * completamente casuali.
-         */
-        const timeFactor = now / 1000;
-
-        const individualX =
-          Math.sin(
-            timeFactor * 0.8 +
-              player.id * 1.37
-          ) * 2.2;
-
-        const individualY =
-          Math.cos(
-            timeFactor * 0.65 +
-              player.id * 1.71
-          ) * 1.8;
-
-        targetX += individualX;
-        targetY += individualY;
-
-        /*
-         * Movimento verso il target.
-         *
-         * Pace e accelerazione influenzano realmente
-         * la velocità della pedina.
-         */
-        const movementFactor =
-          (0.0009 + player.pace / 90000) *
-          (0.75 + player.acceleration / 200);
-
-        const dx = targetX - player.x;
-        const dy = targetY - player.y;
-
-        const moveDistance = Math.hypot(dx, dy);
-
-        let nextX = player.x;
-        let nextY = player.y;
-
-        if (moveDistance > 0.05) {
-          const maxMove =
-            movementFactor *
-            gameDelta *
-            12;
-
-          const ratio = Math.min(
-            maxMove / moveDistance,
-            1
-          );
-
-          nextX =
-            player.x +
-            dx * ratio;
-
-          nextY =
-            player.y +
-            dy * ratio;
-        }
-
-        return {
-          ...player,
-          x: clamp(nextX, 4, 96),
-          y: clamp(nextY, 6, 94),
-        };
+        return next;
       });
 
-      playersRef.current = newPlayers;
-      setPlayers(newPlayers);
+      const currentPlayers =
+        playersRef.current;
+
+      const currentBall =
+        ballRef.current;
 
       /*
-       * ========================================================
-       * MOVIMENTO DEL PALLONE
-       * ========================================================
+       * ------------------------------------------------------
+       * MOVIMENTO GIOCATORI
+       * ------------------------------------------------------
        */
 
-      const ballDx =
-        currentBall.targetX -
-        currentBall.x;
+      const updatedPlayers =
+        currentPlayers.map(
+          (player) => {
+            const formation =
+              player.team === "home"
+                ? HOME_FORMATION[
+                    player.id - 1
+                  ]
+                : AWAY_FORMATION[
+                    player.id - 12
+                  ];
 
-      const ballDy =
-        currentBall.targetY -
-        currentBall.y;
+            let targetX =
+              formation.x;
 
-      const ballDistance = Math.hypot(
-        ballDx,
-        ballDy
+            let targetY =
+              formation.y;
+
+            /*
+             * La squadra sale e scende
+             * seguendo l'azione.
+             */
+
+            const ballXInfluence =
+              (currentBall.x - 50) *
+              0.22;
+
+            const ballYInfluence =
+              (currentBall.y - 50) *
+              0.16;
+
+            targetX +=
+              ballXInfluence;
+
+            targetY +=
+              ballYInfluence;
+
+            /*
+             * I giocatori offensivi
+             * fanno movimenti più ampi.
+             */
+
+            const attackingRoles = [
+              "AD",
+              "AS",
+              "TQ",
+              "CC",
+            ];
+
+            if (
+              attackingRoles.includes(
+                player.role
+              )
+            ) {
+              const attackMovement =
+                Math.sin(
+                  now / 900 +
+                    player.id
+                ) * 4;
+
+              const lateralMovement =
+                Math.cos(
+                  now / 750 +
+                    player.id
+                ) * 3;
+
+              targetX +=
+                attackMovement;
+
+              targetY +=
+                lateralMovement;
+            } else {
+              /*
+               * Difensori e mediano
+               * mantengono più struttura.
+               */
+
+              targetY +=
+                Math.sin(
+                  now / 1200 +
+                    player.id
+                ) * 1.8;
+
+              targetX +=
+                Math.cos(
+                  now / 1400 +
+                    player.id
+                ) * 1.5;
+            }
+
+            /*
+             * Se la palla è vicina,
+             * il giocatore reagisce.
+             */
+
+            const ballDistance =
+              distance(
+                player,
+                currentBall
+              );
+
+            if (
+              player.role !== "POR" &&
+              ballDistance < 25
+            ) {
+              const reaction =
+                0.28;
+
+              targetX +=
+                (currentBall.x -
+                  player.x) *
+                reaction;
+
+              targetY +=
+                (currentBall.y -
+                  player.y) *
+                reaction;
+            }
+
+            /*
+             * Il giocatore che possiede
+             * la palla la segue.
+             */
+
+            if (
+              currentBall.owner ===
+              player.id
+            ) {
+              targetX +=
+                Math.cos(
+                  now / 400
+                ) * 1.4;
+
+              targetY +=
+                Math.sin(
+                  now / 450
+                ) * 1.4;
+            }
+
+            targetX =
+              clamp(
+                targetX,
+                4,
+                96
+              );
+
+            targetY =
+              clamp(
+                targetY,
+                5,
+                95
+              );
+
+            const dx =
+              targetX -
+              player.x;
+
+            const dy =
+              targetY -
+              player.y;
+
+            const targetDistance =
+              Math.hypot(
+                dx,
+                dy
+              );
+
+            /*
+             * QUI aumentiamo
+             * significativamente
+             * la velocità.
+             */
+
+            const baseSpeed =
+              0.022 +
+              player.pace /
+                5500;
+
+            const accelerationFactor =
+              0.7 +
+              player.acceleration /
+                330;
+
+            const movement =
+              baseSpeed *
+              accelerationFactor *
+              gameDelta *
+              8;
+
+            let nextX =
+              player.x;
+
+            let nextY =
+              player.y;
+
+            if (
+              targetDistance >
+              0.03
+            ) {
+              const ratio =
+                Math.min(
+                  movement /
+                    targetDistance,
+                  1
+                );
+
+              nextX +=
+                dx * ratio;
+
+              nextY +=
+                dy * ratio;
+            }
+
+            return {
+              ...player,
+              x: clamp(
+                nextX,
+                4,
+                96
+              ),
+              y: clamp(
+                nextY,
+                5,
+                95
+              ),
+            };
+          }
+        );
+
+      playersRef.current =
+        updatedPlayers;
+
+      setPlayers(
+        updatedPlayers
       );
 
-      let nextBallX = currentBall.x;
-      let nextBallY = currentBall.y;
-
-      if (ballDistance > 0.05) {
-        const ballMove =
-          0.015 *
-          gameDelta *
-          10;
-
-        const ratio = Math.min(
-          ballMove / ballDistance,
-          1
-        );
-
-        nextBallX =
-          currentBall.x +
-          ballDx * ratio;
-
-        nextBallY =
-          currentBall.y +
-          ballDy * ratio;
-      }
-
       /*
-       * Se il pallone ha un proprietario, segue
-       * il giocatore con un leggero ritardo.
+       * ------------------------------------------------------
+       * PALLONE
+       * ------------------------------------------------------
        */
-      if (currentBall.owner !== null) {
-        const owner = newPlayers.find(
-          (player) =>
-            player.id === currentBall.owner
-        );
 
-        if (owner) {
-          nextBallX +=
-            (owner.x - nextBallX) * 0.25;
-
-          nextBallY +=
-            (owner.y - nextBallY) * 0.25;
-        }
-      }
-
-      const nextBall = {
+      let nextBall = {
         ...currentBall,
-        x: nextBallX,
-        y: nextBallY,
       };
 
-      ballRef.current = nextBall;
-      setBall(nextBall);
-
       /*
-       * ========================================================
-       * DECISIONE / PASSAGGIO
-       * ========================================================
+       * Se il pallone è in tiro/passaggio,
+       * viaggia verso il bersaglio.
        */
 
       if (
-        now - lastActionRef.current >
-        900 / speed
+        currentBall.mode ===
+        "pass" ||
+        currentBall.mode ===
+        "shot"
       ) {
-        lastActionRef.current = now;
+        const dx =
+          currentBall.targetX -
+          currentBall.x;
 
-        const attackingTeam =
-          possessionRef.current;
+        const dy =
+          currentBall.targetY -
+          currentBall.y;
 
-        const teamPlayers =
-          newPlayers.filter(
-            (player) =>
-              player.team === attackingTeam &&
-              player.role !== "POR"
+        const ballDistance =
+          Math.hypot(
+            dx,
+            dy
           );
 
-        if (teamPlayers.length > 1) {
-          /*
-           * Troviamo il giocatore più vicino al pallone.
-           * Questo diventa il portatore.
-           */
-          const passer =
-            [...teamPlayers].sort(
-              (a, b) =>
-                distance(a, currentBall) -
-                distance(b, currentBall)
-            )[0];
+        const ballSpeed =
+          currentBall.mode ===
+          "shot"
+            ? 1.9
+            : 1.15;
 
-          /*
-           * Cerchiamo compagni davanti al portatore.
-           */
-          const receivers =
-            teamPlayers
+        const movement =
+          ballSpeed *
+          gameDelta;
+
+        if (
+          ballDistance <=
+          movement
+        ) {
+          nextBall.x =
+            currentBall.targetX;
+
+          nextBall.y =
+            currentBall.targetY;
+
+          if (
+            currentBall.mode ===
+            "shot"
+          ) {
+            /*
+             * IL TIRO È ARRIVATO.
+             * Solo adesso decidiamo
+             * se è gol/parata/fuori.
+             */
+
+            const shootingTeam =
+              possessionRef.current;
+
+            const shooter =
+              updatedPlayers.find(
+                (player) =>
+                  player.id ===
+                  currentBall.owner
+              );
+
+            const finishing =
+              shooter
+                ? shooter.finishing /
+                  99
+                : 0.5;
+
+            const shooting =
+              shooter
+                ? shooter.shooting /
+                  99
+                : 0.5;
+
+            const goalkeeper =
+              updatedPlayers.find(
+                (player) =>
+                  player.team !==
+                    shootingTeam &&
+                  player.role ===
+                    "POR"
+              );
+
+            const goalkeeperQuality =
+              goalkeeper
+                ? goalkeeper.positioning /
+                  99
+                : 0.5;
+
+            const goalChance =
+              0.18 +
+              finishing * 0.22 +
+              shooting * 0.12 -
+              goalkeeperQuality *
+                0.12;
+
+            const goal =
+              Math.random() <
+              goalChance;
+
+            if (goal) {
+              setScore(
+                (currentScore) => ({
+                  ...currentScore,
+                  [shootingTeam]:
+                    currentScore[
+                      shootingTeam
+                    ] + 1,
+                })
+              );
+            }
+
+            /*
+             * Dopo il tiro rimettiamo
+             * il pallone al centro.
+             */
+
+            nextBall = {
+              x: 50,
+              y: 50,
+              targetX: 50,
+              targetY: 50,
+              owner: null,
+              mode: "free",
+            };
+
+            possessionRef.current =
+              shootingTeam ===
+              "home"
+                ? "away"
+                : "home";
+          } else {
+            /*
+             * Fine del passaggio.
+             */
+
+            nextBall.owner =
+              currentBall.targetOwner;
+
+            nextBall.mode =
+              "free";
+          }
+        } else {
+          const ratio =
+            movement /
+            ballDistance;
+
+          nextBall.x +=
+            dx * ratio;
+
+          nextBall.y +=
+            dy * ratio;
+        }
+      } else if (
+        currentBall.owner !==
+        null
+      ) {
+        /*
+         * La palla segue il
+         * portatore.
+         */
+
+        const owner =
+          updatedPlayers.find(
+            (player) =>
+              player.id ===
+              currentBall.owner
+          );
+
+        if (owner) {
+          nextBall.x =
+            owner.x;
+
+          nextBall.y =
+            owner.y;
+
+          nextBall.targetX =
+            owner.x;
+
+          nextBall.targetY =
+            owner.y;
+        }
+      }
+
+      ballRef.current =
+        nextBall;
+
+      setBall(nextBall);
+
+      /*
+       * ------------------------------------------------------
+       * PASSAGGI / DECISIONI
+       * ------------------------------------------------------
+       */
+
+      if (
+        now -
+          lastActionRef.current >
+        950 / speed
+      ) {
+        lastActionRef.current =
+          now;
+
+        /*
+         * Se non c'è un possessore,
+         * cerchiamo chi recupera
+         * la palla.
+         */
+
+        if (
+          nextBall.owner ===
+          null &&
+          nextBall.mode ===
+          "free"
+        ) {
+          const nearest =
+            [...updatedPlayers]
               .filter(
                 (player) =>
-                  player.id !== passer.id
+                  player.role !==
+                  "POR"
               )
-              .map((player) => {
-                const d = distance(
-                  passer,
-                  player
+              .sort(
+                (a, b) =>
+                  distance(
+                    a,
+                    nextBall
+                  ) -
+                  distance(
+                    b,
+                    nextBall
+                  )
+              )[0];
+
+          if (
+            nearest &&
+            distance(
+              nearest,
+              nextBall
+            ) < 12
+          ) {
+            possessionRef.current =
+              nearest.team;
+
+            const recoveredBall =
+              {
+                ...nextBall,
+                owner:
+                  nearest.id,
+                mode: "free",
+              };
+
+            ballRef.current =
+              recoveredBall;
+
+            setBall(
+              recoveredBall
+            );
+          }
+        }
+
+        /*
+         * Se abbiamo un possessore,
+         * valutiamo il passaggio.
+         */
+
+        if (
+          nextBall.owner !==
+          null &&
+          nextBall.mode ===
+          "free"
+        ) {
+          const passer =
+            updatedPlayers.find(
+              (player) =>
+                player.id ===
+                nextBall.owner
+            );
+
+          if (passer) {
+            const teammates =
+              updatedPlayers.filter(
+                (player) =>
+                  player.team ===
+                    passer.team &&
+                  player.id !==
+                    passer.id &&
+                  player.role !==
+                    "POR"
+              );
+
+            if (
+              teammates.length
+            ) {
+              /*
+               * Preferiamo compagni
+               * vicini ma in posizione
+               * utile.
+               */
+
+              const receiver =
+                [...teammates]
+                  .sort(
+                    (a, b) => {
+                      const aForward =
+                        passer.team ===
+                        "home"
+                          ? a.x -
+                            passer.x
+                          : passer.x -
+                            a.x;
+
+                      const bForward =
+                        passer.team ===
+                        "home"
+                          ? b.x -
+                            passer.x
+                          : passer.x -
+                            b.x;
+
+                      const aScore =
+                        aForward * 1.3 -
+                        distance(
+                          passer,
+                          a
+                        ) *
+                          0.35 +
+                        a.decisions *
+                          0.02;
+
+                      const bScore =
+                        bForward * 1.3 -
+                        distance(
+                          passer,
+                          b
+                        ) *
+                          0.35 +
+                        b.decisions *
+                          0.02;
+
+                      return (
+                        bScore -
+                        aScore
+                      );
+                    }
+                  )[0];
+
+              const passQuality =
+                passer.passing /
+                99;
+
+              const decisionQuality =
+                passer.decisions /
+                99;
+
+              const successChance =
+                0.62 +
+                passQuality *
+                  0.2 +
+                decisionQuality *
+                  0.12;
+
+              const successful =
+                Math.random() <
+                successChance;
+
+              if (
+                successful
+              ) {
+                const passBall =
+                  {
+                    x: nextBall.x,
+                    y: nextBall.y,
+                    targetX:
+                      receiver.x,
+                    targetY:
+                      receiver.y,
+                    targetOwner:
+                      receiver.id,
+                    owner:
+                      passer.id,
+                    mode: "pass",
+                  };
+
+                ballRef.current =
+                  passBall;
+
+                setBall(
+                  passBall
                 );
 
-                const forward =
-                  attackingTeam === "home"
-                    ? player.x - passer.x
-                    : passer.x - player.x;
+                setMatchStats(
+                  (stats) => ({
+                    ...stats,
+                    [passer.team ===
+                    "home"
+                      ? "homePasses"
+                      : "awayPasses"]:
+                      stats[
+                        passer.team ===
+                        "home"
+                          ? "homePasses"
+                          : "awayPasses"
+                      ] + 1,
+                  })
+                );
+              } else {
+                /*
+                 * Passaggio sbagliato.
+                 */
 
-                return {
-                  player,
-                  distance: d,
-                  forward,
-                };
-              })
-              .sort((a, b) => {
-                const scoreA =
-                  a.forward * 1.5 -
-                  a.distance * 0.35;
+                const errorBall =
+                  {
+                    x: nextBall.x,
+                    y: nextBall.y,
+                    targetX: clamp(
+                      receiver.x +
+                        (Math.random() -
+                          0.5) *
+                          15,
+                      3,
+                      97
+                    ),
+                    targetY: clamp(
+                      receiver.y +
+                        (Math.random() -
+                          0.5) *
+                          15,
+                      3,
+                      97
+                    ),
+                    targetOwner: null,
+                    owner: null,
+                    mode: "pass",
+                  };
 
-                const scoreB =
-                  b.forward * 1.5 -
-                  b.distance * 0.35;
+                ballRef.current =
+                  errorBall;
 
-                return scoreB - scoreA;
-              });
+                setBall(
+                  errorBall
+                );
 
-          const receiver =
-            receivers[0]?.player;
-
-          if (receiver) {
-            /*
-             * Qualità del passaggio.
-             */
-            const passQuality =
-              passer.passing / 99;
-
-            const decisionQuality =
-              passer.decisions / 99;
-
-            const successChance =
-              0.68 +
-              passQuality * 0.18 +
-              decisionQuality * 0.1;
-
-            const successfulPass =
-              Math.random() <
-              successChance;
-
-            if (successfulPass) {
-              const updatedBall = {
-                x: currentBall.x,
-                y: currentBall.y,
-                targetX: receiver.x,
-                targetY: receiver.y,
-                owner: receiver.id,
-              };
-
-              ballRef.current =
-                updatedBall;
-
-              setBall(updatedBall);
-
-              setMatchStats((stats) => {
-                const key =
-                  attackingTeam === "home"
-                    ? "homePasses"
-                    : "awayPasses";
-
-                return {
-                  ...stats,
-                  [key]: stats[key] + 1,
-                };
-              });
-            } else {
-              /*
-               * Passaggio sbagliato:
-               * il pallone va verso una posizione
-               * leggermente casuale.
-               */
-              const errorX =
-                receiver.x +
-                (Math.random() - 0.5) * 12;
-
-              const errorY =
-                receiver.y +
-                (Math.random() - 0.5) * 12;
-
-              const updatedBall = {
-                x: currentBall.x,
-                y: currentBall.y,
-                targetX: clamp(
-                  errorX,
-                  4,
-                  96
-                ),
-                targetY: clamp(
-                  errorY,
-                  6,
-                  94
-                ),
-                owner: null,
-              };
-
-              ballRef.current =
-                updatedBall;
-
-              setBall(updatedBall);
-
-              possessionRef.current =
-                possessionRef.current ===
-                "home"
-                  ? "away"
-                  : "home";
+                possessionRef.current =
+                  passer.team ===
+                  "home"
+                    ? "away"
+                    : "home";
+              }
             }
           }
         }
       }
 
       /*
-       * ========================================================
-       * EVENTI OFFENSIVI
-       * ========================================================
+       * ------------------------------------------------------
+       * TIRO
+       * ------------------------------------------------------
        */
 
       if (
-        Math.random() <
-        0.0022 * speed
+        now -
+          lastShotRef.current >
+        9500 / speed
       ) {
+        lastShotRef.current =
+          now;
+
         const attackingTeam =
           possessionRef.current;
 
         const attackingPlayers =
-          newPlayers.filter(
+          updatedPlayers.filter(
             (player) =>
               player.team ===
-              attackingTeam &&
-              player.role !== "POR"
+                attackingTeam &&
+              player.role !==
+                "POR" &&
+              player.x >
+                (attackingTeam ===
+                "home"
+                  ? 55
+                  : 0)
           );
 
-        if (attackingPlayers.length) {
-          const attacker =
-            attackingPlayers[
-              Math.floor(
-                Math.random() *
-                  attackingPlayers.length
-              )
-            ];
+        if (
+          attackingPlayers.length
+        ) {
+          /*
+           * Cerchiamo un giocatore
+           * con buone qualità offensive.
+           */
 
-          const shootingPower =
-            attacker.shooting / 99;
+          const shooter =
+            [...attackingPlayers]
+              .sort(
+                (a, b) => {
+                  const aScore =
+                    a.shooting +
+                    a.finishing +
+                    a.decisions;
 
-          const finishing =
-            attacker.finishing / 99;
+                  const bScore =
+                    b.shooting +
+                    b.finishing +
+                    b.decisions;
 
-          const decision =
-            attacker.decisions / 99;
-
-          const chance =
-            0.12 +
-            shootingPower * 0.2 +
-            finishing * 0.3 +
-            decision * 0.15;
-
-          setMatchStats((stats) => {
-            const shotKey =
-              attackingTeam === "home"
-                ? "homeShots"
-                : "awayShots";
-
-            const xgKey =
-              attackingTeam === "home"
-                ? "homeXg"
-                : "awayXg";
-
-            const xg =
-              0.03 +
-              Math.random() * 0.18;
-
-            return {
-              ...stats,
-              [shotKey]:
-                stats[shotKey] + 1,
-              [xgKey]:
-                stats[xgKey] + xg,
-            };
-          });
+                  return (
+                    bScore -
+                    aScore
+                  );
+                }
+              )[0];
 
           /*
-           * Il tiro può diventare gol.
+           * Non facciamo partire il tiro
+           * da centrocampo.
            */
-          if (Math.random() < chance * 0.16) {
-            setScore((currentScore) => ({
-              ...currentScore,
-              [attackingTeam]:
-                currentScore[
-                  attackingTeam
-                ] + 1,
-            }));
 
-            const goalBall = {
-              x:
-                attackingTeam === "home"
-                  ? 97
-                  : 3,
-              y: 50,
-              targetX:
-                attackingTeam === "home"
-                  ? 97
-                  : 3,
-              targetY: 50,
-              owner: null,
+          const goodPosition =
+            attackingTeam ===
+            "home"
+              ? shooter.x >
+                67
+              : shooter.x <
+                33;
+
+          if (
+            goodPosition
+          ) {
+            const goalX =
+              attackingTeam ===
+              "home"
+                ? 98
+                : 2;
+
+            const goalY =
+              50 +
+              (Math.random() -
+                0.5) *
+                18;
+
+            const shotXg =
+              clamp(
+                0.05 +
+                  (shooter.finishing /
+                    99) *
+                    0.18,
+                0.04,
+                0.35
+              );
+
+            const shotBall = {
+              x: shooter.x,
+              y: shooter.y,
+              targetX: goalX,
+              targetY: goalY,
+              owner: shooter.id,
+              mode: "shot",
             };
 
             ballRef.current =
-              goalBall;
+              shotBall;
 
-            setBall(goalBall);
+            setBall(
+              shotBall
+            );
 
-            possessionRef.current =
-              attackingTeam === "home"
-                ? "away"
-                : "home";
+            setMatchStats(
+              (stats) => ({
+                ...stats,
+                [attackingTeam ===
+                "home"
+                  ? "homeShots"
+                  : "awayShots"]:
+                  stats[
+                    attackingTeam ===
+                    "home"
+                      ? "homeShots"
+                      : "awayShots"
+                  ] + 1,
+                [attackingTeam ===
+                "home"
+                  ? "homeXg"
+                  : "awayXg"]:
+                  stats[
+                    attackingTeam ===
+                    "home"
+                      ? "homeXg"
+                      : "awayXg"
+                  ] + shotXg,
+              })
+            );
           }
         }
       }
 
       /*
-       * ========================================================
+       * ------------------------------------------------------
        * POSSESSO
-       * ========================================================
+       * ------------------------------------------------------
        */
 
       if (
-        now - lastStatUpdateRef.current >
-        1000
+        now -
+          lastPossessionRef.current >
+        2000
       ) {
-        lastStatUpdateRef.current = now;
+        lastPossessionRef.current =
+          now;
 
-        const homeControl =
-          newPlayers
+        const home =
+          updatedPlayers
             .filter(
               (player) =>
-                player.team === "home"
+                player.team ===
+                "home"
             )
             .reduce(
               (sum, player) =>
@@ -1345,11 +1724,12 @@ function App() {
               0
             );
 
-        const awayControl =
-          newPlayers
+        const away =
+          updatedPlayers
             .filter(
               (player) =>
-                player.team === "away"
+                player.team ===
+                "away"
             )
             .reduce(
               (sum, player) =>
@@ -1361,46 +1741,63 @@ function App() {
             );
 
         const total =
-          homeControl +
-          awayControl;
+          home + away;
 
-        const homePercentage =
+        const homePossession =
           Math.round(
-            (homeControl / total) * 100
+            (home / total) *
+              100
           );
 
-        setMatchStats((stats) => ({
-          ...stats,
-          homePossession:
-            homePercentage,
-          awayPossession:
-            100 - homePercentage,
-        }));
+        setMatchStats(
+          (stats) => ({
+            ...stats,
+            homePossession,
+            awayPossession:
+              100 -
+              homePossession,
+          })
+        );
       }
 
-      animationFrame =
-        requestAnimationFrame(animate);
+      animationRef.current =
+        requestAnimationFrame(
+          animate
+        );
     };
 
-    animationFrame =
-      requestAnimationFrame(animate);
-
-    return () =>
-      cancelAnimationFrame(
-        animationFrame
+    animationRef.current =
+      requestAnimationFrame(
+        animate
       );
+
+    return () => {
+      if (
+        animationRef.current
+      ) {
+        cancelAnimationFrame(
+          animationRef.current
+        );
+      }
+    };
   }, [paused, speed]);
 
-  const formatTime = (seconds) => {
-    const mins = Math.floor(
-      seconds / 60
-    );
+  const formatTime = (
+    seconds
+  ) => {
+    const minutes =
+      Math.floor(
+        seconds / 60
+      );
 
-    const secs = Math.floor(
-      seconds % 60
-    );
+    const secs =
+      Math.floor(
+        seconds % 60
+      );
 
-    return `${String(mins).padStart(
+    return `${String(
+      minutes
+    ).padStart(
       2,
       "0"
     )}:${String(secs).padStart(
@@ -1409,27 +1806,17 @@ function App() {
     )}`;
   };
 
-  const handleSelectPlayer = (player) => {
-    setSelectedPlayer({
-      ...player,
-      overall:
-        calculateOverall(player),
-    });
-  };
-
   return (
     <div className="app">
-      {/* ======================================================
-          HEADER
-      ====================================================== */}
-
       <header className="topbar">
         <div className="brand">
           <div className="competition">
             SERIE A • GIORNATA 1
           </div>
 
-          <h1>CALCIO MANAGER</h1>
+          <h1>
+            CALCIO MANAGER
+          </h1>
         </div>
 
         <div className="match-score">
@@ -1453,22 +1840,23 @@ function App() {
         </div>
       </header>
 
-      {/* ======================================================
-          STADIO
-      ====================================================== */}
-
       <main>
         <div className="stadium">
           <div className="stand">
             {Array.from({
               length: 52,
-            }).map((_, index) => (
-              <span key={index}>
-                {index % 3 === 0
-                  ? "●"
-                  : "•"}
-              </span>
-            ))}
+            }).map(
+              (_, index) => (
+                <span
+                  key={index}
+                >
+                  {index % 3 ===
+                  0
+                    ? "●"
+                    : "•"}
+                </span>
+              )
+            )}
           </div>
 
           <div className="pitch-wrapper">
@@ -1495,31 +1883,43 @@ function App() {
               <div className="corner c3" />
               <div className="corner c4" />
 
-              {players.map((player) => (
-                <button
-                  key={player.id}
-                  className={`player ${player.team}`}
-                  style={{
-                    left: `${player.x}%`,
-                    top: `${player.y}%`,
-                  }}
-                  onClick={() =>
-                    handleSelectPlayer(
-                      player
-                    )
-                  }
-                  aria-label={
-                    player.name
-                  }
-                >
-                  <span>
-                    {player.number}
-                  </span>
-                </button>
-              ))}
+              {players.map(
+                (player) => (
+                  <button
+                    key={
+                      player.id
+                    }
+                    className={`player ${player.team}`}
+                    style={{
+                      left: `${player.x}%`,
+                      top: `${player.y}%`,
+                    }}
+                    onClick={() =>
+                      setSelectedPlayer(
+                        {
+                          ...player,
+                          overall:
+                            calculateOverall(
+                              player
+                            ),
+                        }
+                      )
+                    }
+                  >
+                    <span>
+                      {player.number}
+                    </span>
+                  </button>
+                )
+              )}
 
               <div
-                className="ball"
+                className={`ball ${
+                  ball.mode ===
+                  "shot"
+                    ? "shot-ball"
+                    : ""
+                }`}
                 style={{
                   left: `${ball.x}%`,
                   top: `${ball.y}%`,
@@ -1533,26 +1933,28 @@ function App() {
           <div className="stand">
             {Array.from({
               length: 52,
-            }).map((_, index) => (
-              <span key={index}>
-                {index % 3 === 0
-                  ? "●"
-                  : "•"}
-              </span>
-            ))}
+            }).map(
+              (_, index) => (
+                <span
+                  key={index}
+                >
+                  {index % 3 ===
+                  0
+                    ? "●"
+                    : "•"}
+                </span>
+              )
+            )}
           </div>
         </div>
-
-        {/* ====================================================
-            CONTROLLI
-        ==================================================== */}
 
         <section className="controls">
           <button
             className="main-button"
             onClick={() =>
               setPaused(
-                (current) => !current
+                (value) =>
+                  !value
               )
             }
           >
@@ -1561,55 +1963,34 @@ function App() {
               : "Ⅱ PAUSA"}
           </button>
 
-          <button
-            className={
-              speed === 1
-                ? "speed active"
-                : "speed"
-            }
-            onClick={() =>
-              setSpeed(1)
-            }
-          >
-            1×
-          </button>
+          {[1, 2, 4].map(
+            (value) => (
+              <button
+                key={value}
+                className={
+                  speed === value
+                    ? "speed active"
+                    : "speed"
+                }
+                onClick={() =>
+                  setSpeed(
+                    value
+                  )
+                }
+              >
+                {value}×
+              </button>
+            )
+          )}
 
           <button
-            className={
-              speed === 2
-                ? "speed active"
-                : "speed"
+            onClick={
+              resetMatch
             }
-            onClick={() =>
-              setSpeed(2)
-            }
-          >
-            2×
-          </button>
-
-          <button
-            className={
-              speed === 4
-                ? "speed active"
-                : "speed"
-            }
-            onClick={() =>
-              setSpeed(4)
-            }
-          >
-            4×
-          </button>
-
-          <button
-            onClick={resetMatch}
           >
             ↻ RESET
           </button>
         </section>
-
-        {/* ====================================================
-            STATISTICHE
-        ==================================================== */}
 
         <section className="stats-panel">
           <Stat
@@ -1637,42 +2018,52 @@ function App() {
           />
         </section>
 
-        {/* ====================================================
-            TATTICA
-        ==================================================== */}
-
         <section className="tactics">
           <div>
-            <span>MODULO</span>
-            <strong>4-3-3</strong>
+            <span>
+              MODULO
+            </span>
+            <strong>
+              4-3-3
+            </strong>
           </div>
 
           <div>
-            <span>MENTALITÀ</span>
-            <strong>Equilibrata</strong>
+            <span>
+              MENTALITÀ
+            </span>
+            <strong>
+              Equilibrata
+            </strong>
           </div>
 
           <div>
-            <span>PRESSING</span>
-            <strong>Medio</strong>
+            <span>
+              PRESSING
+            </span>
+            <strong>
+              Medio
+            </strong>
           </div>
 
           <div>
-            <span>RITMO</span>
-            <strong>Alto</strong>
+            <span>
+              RITMO
+            </span>
+            <strong>
+              Alto
+            </strong>
           </div>
         </section>
       </main>
-
-      {/* ======================================================
-          SCHEDA GIOCATORE
-      ====================================================== */}
 
       {selectedPlayer && (
         <div
           className="modal-overlay"
           onClick={() =>
-            setSelectedPlayer(null)
+            setSelectedPlayer(
+              null
+            )
           }
         >
           <div
@@ -1684,7 +2075,9 @@ function App() {
             <button
               className="close"
               onClick={() =>
-                setSelectedPlayer(null)
+                setSelectedPlayer(
+                  null
+                )
               }
             >
               ×
@@ -1694,30 +2087,43 @@ function App() {
               <div
                 className={`big-number ${selectedPlayer.team}`}
               >
-                {selectedPlayer.number}
+                {
+                  selectedPlayer.number
+                }
               </div>
 
               <div className="player-info">
                 <span className="small-role">
-                  {selectedPlayer.role}
+                  {
+                    selectedPlayer.role
+                  }
                 </span>
 
                 <h2>
-                  {selectedPlayer.name}
+                  {
+                    selectedPlayer.name
+                  }
                 </h2>
 
                 <span>
-                  {selectedPlayer.team ===
-                  "home"
-                    ? "NAPOLI"
-                    : "JUVENTUS"}
+                  {
+                    selectedPlayer.team ===
+                    "home"
+                      ? "NAPOLI"
+                      : "JUVENTUS"
+                  }
                 </span>
               </div>
 
               <div className="overall">
-                <small>OVR</small>
+                <small>
+                  OVR
+                </small>
+
                 <strong>
-                  {selectedPlayer.overall}
+                  {
+                    selectedPlayer.overall
+                  }
                 </strong>
               </div>
             </div>
@@ -1828,21 +2234,37 @@ function App() {
   );
 }
 
-function Stat({ title, value }) {
+function Stat({
+  title,
+  value,
+}) {
   return (
     <div className="stat-box">
-      <span>{title}</span>
-      <strong>{value}</strong>
+      <span>
+        {title}
+      </span>
+
+      <strong>
+        {value}
+      </strong>
     </div>
   );
 }
 
-function Attribute({ name, value }) {
+function Attribute({
+  name,
+  value,
+}) {
   return (
     <div className="attribute">
       <div className="attribute-top">
-        <span>{name}</span>
-        <strong>{value}</strong>
+        <span>
+          {name}
+        </span>
+
+        <strong>
+          {value}
+        </strong>
       </div>
 
       <div className="attribute-bar">
