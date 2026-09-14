@@ -3,52 +3,29 @@
  *
  * Gestisce:
  *
- * - proprietario della palla
+ * - giocatore in possesso
  * - passaggi
  * - ricezioni
- * - perdita del possesso
+ * - errori di passaggio
+ * - intercetti
  * - palla contesa
+ * - cambio possesso tra le squadre
  *
- * NON gestisce ancora:
- *
- * - tiri
- * - dribbling
- * - contrasti completi
- * - falli
- * - fuorigioco.
+ * Il sistema NON decide la grafica.
+ * Modifica esclusivamente il World State
+ * e genera eventi.
  */
 
 import {
   POSSESSION,
 } from "../worldState.js";
 
-import {
-  EVENT_TYPES,
-} from "../events/eventModel.js";
-
-import {
-  distance,
-} from "../spatial/grid.js";
-
-
-function clamp(
-  value,
-  min = 0,
-  max = 1
-) {
-  return Math.max(
-    min,
-    Math.min(max, value)
-  );
-}
-
 
 /**
- * Restituisce tutti i giocatori attivi.
+ * Restituisce tutti i giocatori
+ * titolari di una squadra.
  */
-function getActivePlayers(
-  team
-) {
+function getTeamPlayers(team) {
   if (!team) {
     return [];
   }
@@ -57,61 +34,474 @@ function getActivePlayers(
     team.startingXI ?? [];
 
   return startingXI
-    .map(
-      (reference) => {
-        if (
-          typeof reference ===
-          "string"
-        ) {
-          return team.players.find(
+    .map((reference) => {
+      if (
+        typeof reference ===
+        "string"
+      ) {
+        return (
+          team.players?.find(
             (player) =>
               player.id ===
               reference
-          );
-        }
+          ) ?? null
+        );
+      }
 
+      if (
+        reference &&
+        typeof reference ===
+          "object"
+      ) {
         return reference;
       }
-    )
+
+      return null;
+    })
     .filter(Boolean);
 }
 
 
 /**
- * Restituisce il giocatore che
- * possiede la palla.
+ * Restituisce i giocatori attivi
+ * della squadra avversaria.
  */
-export function getBallOwner(
-  state
+function getOpponentPlayers(
+  state,
+  side
 ) {
-  const ownerId =
-    state.ball.ownerId;
+  if (
+    side === POSSESSION.HOME
+  ) {
+    return getTeamPlayers(
+      state.teams.away
+    );
+  }
 
-  if (!ownerId) {
+  if (
+    side === POSSESSION.AWAY
+  ) {
+    return getTeamPlayers(
+      state.teams.home
+    );
+  }
+
+  return [];
+}
+
+
+/**
+ * Restituisce i giocatori della
+ * squadra che possiede palla.
+ */
+function getPossessionPlayers(
+  state,
+  side
+) {
+  if (
+    side === POSSESSION.HOME
+  ) {
+    return getTeamPlayers(
+      state.teams.home
+    );
+  }
+
+  if (
+    side === POSSESSION.AWAY
+  ) {
+    return getTeamPlayers(
+      state.teams.away
+    );
+  }
+
+  return [];
+}
+
+
+/**
+ * Restituisce la squadra opposta.
+ */
+function getOppositeSide(side) {
+  if (
+    side === POSSESSION.HOME
+  ) {
+    return POSSESSION.AWAY;
+  }
+
+  if (
+    side === POSSESSION.AWAY
+  ) {
+    return POSSESSION.HOME;
+  }
+
+  return POSSESSION.CONTESTED;
+}
+
+
+/**
+ * Distanza tra due punti.
+ */
+function distance(
+  a,
+  b
+) {
+  if (
+    !a ||
+    !b
+  ) {
+    return 1;
+  }
+
+  const dx =
+    (a.x ?? 0) -
+    (b.x ?? 0);
+
+  const dy =
+    (a.y ?? 0) -
+    (b.y ?? 0);
+
+  return Math.sqrt(
+    dx * dx +
+    dy * dy
+  );
+}
+
+
+/**
+ * Clamp.
+ */
+function clamp(
+  value,
+  min = 0,
+  max = 1
+) {
+  return Math.max(
+    min,
+    Math.min(
+      max,
+      value
+    )
+  );
+}
+
+
+/**
+ * Legge un attributo del giocatore.
+ */
+function getAttribute(
+  player,
+  category,
+  key,
+  fallback = 50
+) {
+  return (
+    player?.attributes?.[
+      category
+    ]?.[key] ??
+    fallback
+  );
+}
+
+
+/**
+ * Trova il giocatore più vicino
+ * alla posizione della palla.
+ */
+function findNearestOpponent(
+  state,
+  side,
+  position
+) {
+  const opponents =
+    getOpponentPlayers(
+      state,
+      side
+    );
+
+  let nearest = null;
+  let nearestDistance =
+    Infinity;
+
+  for (
+    const player
+    of opponents
+  ) {
+    const d =
+      distance(
+        player.position,
+        position
+      );
+
+    if (
+      d <
+      nearestDistance
+    ) {
+      nearest =
+        player;
+
+      nearestDistance =
+        d;
+    }
+  }
+
+  return {
+    player:
+      nearest,
+
+    distance:
+      nearestDistance,
+  };
+}
+
+
+/**
+ * Trova un compagno adatto
+ * a ricevere il passaggio.
+ *
+ * Per ora scegliamo in base a:
+ *
+ * - distanza
+ * - spazio
+ * - visione
+ * - passaggi
+ * - movimento senza palla
+ */
+function choosePassTarget({
+  state,
+  side,
+  passer,
+  rng,
+}) {
+  const teammates =
+    getPossessionPlayers(
+      state,
+      side
+    ).filter(
+      (player) =>
+        player.id !==
+        passer.id
+    );
+
+  if (!teammates.length) {
     return null;
   }
 
-  const home =
-    state.teams.home.players
-      .find(
-        (player) =>
-          player.id ===
-          ownerId
-      );
+  const candidates =
+    teammates.map(
+      (player) => {
+        const d =
+          distance(
+            passer.position,
+            player.position
+          );
 
-  if (home) {
-    return home;
+        const vision =
+          getAttribute(
+            passer,
+            "mental",
+            "visione"
+          );
+
+        const passing =
+          getAttribute(
+            passer,
+            "technical",
+            "passaggi"
+          );
+
+        const movement =
+          getAttribute(
+            player,
+            "mental",
+            "movimentoSenzaPalla",
+            getAttribute(
+              player,
+              "mental",
+              "movimento_senza_palla",
+              50
+            )
+          );
+
+        const space =
+          1 -
+          clamp(
+            findNearestOpponent(
+              state,
+              side,
+              player.position
+            ).distance /
+              0.35
+          );
+
+        /**
+         * Distanza ideale:
+         * non troppo vicino,
+         * non troppo lontano.
+         */
+        const distanceScore =
+          1 -
+          clamp(
+            Math.abs(
+              d - 0.18
+            ) /
+              0.25
+          );
+
+        const score =
+          distanceScore *
+            25 +
+          space *
+            30 +
+          vision /
+            99 *
+            15 +
+          passing /
+            99 *
+            15 +
+          movement /
+            99 *
+            15;
+
+        return {
+          player,
+          score,
+          distance: d,
+        };
+      }
+    );
+
+  candidates.sort(
+    (a, b) =>
+      b.score -
+      a.score
+  );
+
+  /**
+   * Piccola componente casuale
+   * deterministica.
+   *
+   * Evita che la squadra scelga
+   * SEMPRE lo stesso compagno.
+   */
+  const best =
+    candidates[0];
+
+  if (
+    candidates.length > 1 &&
+    rng.chance(0.20)
+  ) {
+    return candidates[
+      rng.integer(
+        0,
+        Math.min(
+          candidates.length - 1,
+          2
+        )
+      )
+    ].player;
   }
 
-  const away =
-    state.teams.away.players
-      .find(
-        (player) =>
-          player.id ===
-          ownerId
-      );
+  return best.player;
+}
 
-  return away ?? null;
+
+/**
+ * Calcola la probabilità che
+ * il passaggio sia completato.
+ */
+function calculatePassSuccess({
+  state,
+  passer,
+  receiver,
+  side,
+  rng,
+}) {
+  const passing =
+    getAttribute(
+      passer,
+      "technical",
+      "passaggi"
+    );
+
+  const technique =
+    getAttribute(
+      passer,
+      "technical",
+      "tecnica"
+    );
+
+  const firstControl =
+    getAttribute(
+      receiver,
+      "technical",
+      "primoControllo"
+    );
+
+  const anticipation =
+    getAttribute(
+      receiver,
+      "mental",
+      "anticipazione"
+    );
+
+  const opponentInfo =
+    findNearestOpponent(
+      state,
+      side,
+      receiver.position
+    );
+
+  const pressure =
+    clamp(
+      1 -
+        opponentInfo.distance /
+          0.25
+    );
+
+  /**
+   * Più pressione =
+   * meno probabilità di successo.
+   */
+  let probability =
+    0.55 +
+    passing /
+      99 *
+      0.20 +
+    technique /
+      99 *
+      0.10 +
+    firstControl /
+      99 *
+      0.08 +
+    anticipation /
+      99 *
+      0.05 -
+    pressure *
+      0.28;
+
+  /**
+   * Evitiamo valori estremi.
+   */
+  probability =
+    clamp(
+      probability,
+      0.35,
+      0.94
+    );
+
+  /**
+   * Piccola variazione deterministica.
+   */
+  probability +=
+    (rng.float() -
+      0.5) *
+    0.04;
+
+  return clamp(
+    probability,
+    0.30,
+    0.96
+  );
 }
 
 
@@ -121,75 +511,104 @@ export function getBallOwner(
 export function setPossession({
   state,
   side,
-  playerId,
+  playerId = null,
 }) {
-  const previousOwner =
-    state.ball.ownerId;
-
   state.possession =
     side;
 
   state.ball.ownerId =
     playerId;
 
-  state.ball.lastTouchPlayerId =
-    playerId;
+  if (playerId) {
+    const players =
+      getPossessionPlayers(
+        state,
+        side
+      );
 
-  state.ball.state =
-    "controlled";
+    const player =
+      players.find(
+        (item) =>
+          item.id ===
+          playerId
+      );
 
-  for (
-    const team of [
-      state.teams.home,
-      state.teams.away,
-    ]
-  ) {
-    for (
-      const player of team.players
-    ) {
+    if (player) {
       player.hasBall =
-        player.id ===
-        playerId;
+        true;
+
+      state.ball.x =
+        player.position.x;
+
+      state.ball.y =
+        player.position.y;
     }
   }
 
-  return {
-    previousOwner,
-    newOwner:
-      playerId,
-  };
+  /**
+   * Tutti gli altri giocatori
+   * perdono il possesso.
+   */
+  const allPlayers = [
+    ...getTeamPlayers(
+      state.teams.home
+    ),
+
+    ...getTeamPlayers(
+      state.teams.away
+    ),
+  ];
+
+  for (
+    const player
+    of allPlayers
+  ) {
+    if (
+      player.id !==
+      playerId
+    ) {
+      player.hasBall =
+        false;
+    }
+  }
 }
 
 
 /**
- * Determina quale squadra appartiene
- * a un determinato giocatore.
+ * Restituisce la squadra
+ * di appartenenza del giocatore.
  */
 export function getPlayerSide(
   state,
   playerId
 ) {
   const home =
-    state.teams.home.players
-      .some(
-        (player) =>
-          player.id ===
-          playerId
-      );
+    getTeamPlayers(
+      state.teams.home
+    );
 
-  if (home) {
+  if (
+    home.some(
+      (player) =>
+        player.id ===
+        playerId
+    )
+  ) {
     return POSSESSION.HOME;
   }
 
   const away =
-    state.teams.away.players
-      .some(
-        (player) =>
-          player.id ===
-          playerId
-      );
+    getTeamPlayers(
+      state.teams.away
+    );
 
-  if (away) {
+  if (
+    away.some(
+      (player) =>
+        player.id ===
+        playerId
+    )
+  ) {
     return POSSESSION.AWAY;
   }
 
@@ -198,472 +617,372 @@ export function getPlayerSide(
 
 
 /**
- * Cerca il miglior compagno
- * per una ricezione.
+ * Passaggio intercettato.
  */
-export function findBestPassTarget({
-  player,
-  teammates,
-  spatialGrid,
-}) {
-  const candidates =
-    teammates
-      .filter(
-        (teammate) =>
-          teammate &&
-          teammate.id !==
-            player.id
-      )
-      .map(
-        (teammate) => {
-          const distanceToPlayer =
-            distance(
-              player.position,
-              teammate.position
-            );
-
-          let space = 0.5;
-
-          if (
-            spatialGrid
-          ) {
-            const x =
-              Math.max(
-                0,
-                Math.min(
-                  0.999999,
-                  teammate.position.x
-                )
-              );
-
-            const y =
-              Math.max(
-                0,
-                Math.min(
-                  0.999999,
-                  teammate.position.y
-                )
-              );
-
-            const column =
-              Math.floor(
-                x *
-                  spatialGrid.columns
-              );
-
-            const row =
-              Math.floor(
-                y *
-                  spatialGrid.rows
-              );
-
-            const index =
-              row *
-                spatialGrid.columns +
-              column;
-
-            space =
-              spatialGrid
-                .cells[index]
-                ?.freeSpace ??
-              0.5;
-          }
-
-          /**
-           * Per ora premiamo:
-           *
-           * - spazio
-           * - distanza ragionevole
-           */
-          const distanceScore =
-            clamp(
-              1 -
-                Math.max(
-                  0,
-                  distanceToPlayer -
-                    0.08
-                ) /
-                  0.70
-            );
-
-          const score =
-            space * 0.60 +
-            distanceScore * 0.40;
-
-          return {
-            teammate,
-            score,
-          };
-        }
-      )
-      .sort(
-        (a, b) =>
-          b.score -
-          a.score
-      );
-
-  return (
-    candidates[0]?.teammate ??
-    null
-  );
-}
-
-
-/**
- * Esegue un passaggio semplice.
- *
- * Questa è una prima implementazione.
- * La traiettoria fisica completa arriverà
- * successivamente.
- */
-export function executePass({
+function handleInterception({
   state,
-  player,
-  target,
-  rng,
+  side,
+  passer,
+  receiver,
+  opponent,
+  emitEvent,
 }) {
-  if (
-    !player ||
-    !target
-  ) {
-    return {
-      success: false,
-      reason:
-        "missing_player_or_target",
-    };
-  }
-
-  const passing =
-    (
-      player.attributes
-        ?.technical
-        ?.passaggi ??
-      50
-    ) / 99;
-
-  const technique =
-    (
-      player.attributes
-        ?.technical
-        ?.tecnica ??
-      50
-    ) / 99;
-
-  const decision =
-    (
-      player.attributes
-        ?.mental
-        ?.decisioni ??
-      50
-    ) / 99;
-
-  const distanceToTarget =
-    distance(
-      player.position,
-      target.position
+  const opponentSide =
+    getOppositeSide(
+      side
     );
 
-  const distanceDifficulty =
-    clamp(
-      distanceToTarget * 0.8
-    );
+  /**
+   * La palla diventa contesa
+   * per un istante.
+   */
+  state.possession =
+    POSSESSION.CONTESTED;
 
-  const successChance =
-    clamp(
-      0.35 +
-        passing * 0.30 +
-        technique * 0.15 +
-        decision * 0.15 -
-        distanceDifficulty * 0.20,
-      0.15,
-      0.96
-    );
-
-  const success =
-    rng.chance(
-      successChance
-    );
-
-  if (!success) {
-    return {
-      success: false,
-
-      successChance,
-
-      reason:
-        "pass_failed",
-    };
-  }
-
-  setPossession({
-    state,
-
-    side:
-      getPlayerSide(
-        state,
-        target.id
-      ),
-
-    playerId:
-      target.id,
-  });
-
-  state.ball.x =
-    target.position.x;
-
-  state.ball.y =
-    target.position.y;
-
-  state.ball.target =
+  state.ball.ownerId =
     null;
 
-  state.ball.pass = {
-    passerId:
-      player.id,
+  state.ball.lastTouchPlayerId =
+    passer.id;
 
-    receiverId:
-      target.id,
+  state.ball.x =
+    receiver.position.x;
 
-    success: true,
-  };
+  state.ball.y =
+    receiver.position.y;
 
-  return {
-    success: true,
+  emitEvent({
+    type:
+      "PASS_INTERCEPTED",
 
-    successChance,
+    actors: [
+      passer.id,
+      opponent?.id,
+    ].filter(Boolean),
 
-    receiverId:
-      target.id,
-  };
+    payload: {
+      passerId:
+        passer.id,
+
+      intendedReceiverId:
+        receiver.id,
+
+      interceptorId:
+        opponent?.id ??
+        null,
+
+      from:
+        side,
+
+      to:
+        opponentSide,
+    },
+  });
+
+  /**
+   * L'intercettore conquista
+   * immediatamente il possesso.
+   *
+   * Non aspettiamo un altro tick
+   * perché altrimenti la palla
+   * rimarrebbe troppo spesso
+   * CONTESTED.
+   */
+  if (opponent) {
+    setPossession({
+      state,
+
+      side:
+        opponentSide,
+
+      playerId:
+        opponent.id,
+    });
+
+    emitEvent({
+      type:
+        "POSSESSION_WON",
+
+      actors: [
+        opponent.id,
+      ],
+
+      payload: {
+        side:
+          opponentSide,
+
+        reason:
+          "interception",
+
+        previousSide:
+          side,
+      },
+    });
+  }
 }
 
 
 /**
- * Gestisce il primo micro-ciclo
- * del possesso.
+ * Processa un'azione di possesso.
  */
 export function processPossession({
   state,
   rng,
   emitEvent,
 }) {
-  const owner =
-    getBallOwner(state);
-
-  if (!owner) {
-    return;
-  }
-
   const side =
-    getPlayerSide(
-      state,
-      owner.id
-    );
-
-  const team =
-    side === POSSESSION.HOME
-      ? state.teams.home
-      : state.teams.away;
-
-  const opponents =
-    side === POSSESSION.HOME
-      ? getActivePlayers(
-          state.teams.away
-        )
-      : getActivePlayers(
-          state.teams.home
-        );
-
-  const teammates =
-    getActivePlayers(
-      team
-    );
-
-  /**
-   * Troviamo il compagno
-   * migliore per una prima circolazione.
-   */
-  const target =
-    findBestPassTarget({
-      player:
-        owner,
-
-      teammates,
-
-      spatialGrid:
-        state.spatialGrid,
-    });
-
-  if (!target) {
-    return;
-  }
-
-  /**
-   * Valutiamo la pressione
-   * degli avversari vicini.
-   */
-  const nearestOpponent =
-    opponents
-      .map(
-        (opponent) => ({
-          opponent,
-
-          distance:
-            distance(
-              owner.position,
-              opponent.position
-            ),
-        })
-      )
-      .sort(
-        (a, b) =>
-          a.distance -
-          b.distance
-      )[0];
-
-  const pressure =
-    nearestOpponent
-      ? clamp(
-          1 -
-            nearestOpponent.distance *
-              3
-        )
-      : 0;
-
-  /**
-   * Se non c'è pressione,
-   * il giocatore può circolare.
-   *
-   * Se la pressione è alta,
-   * il passaggio diventa più probabile.
-   */
-  const passProbability =
-    clamp(
-      0.35 +
-        pressure * 0.40
-    );
+    state.possession;
 
   if (
-    rng.chance(
-      passProbability
-    )
+    side !==
+      POSSESSION.HOME &&
+    side !==
+      POSSESSION.AWAY
   ) {
-    emitEvent({
-      type:
-        EVENT_TYPES.PASS_ATTEMPT,
+    return;
+  }
 
-      actors: [
-        owner.id,
-        target.id,
-      ],
+  const players =
+    getPossessionPlayers(
+      state,
+      side
+    );
 
-      payload: {
-        pressure,
-      },
-    });
+  if (!players.length) {
+    return;
+  }
 
-    const result =
-      executePass({
-        state,
-        player:
-          owner,
-        target,
-        rng,
-      });
+  let holder =
+    players.find(
+      (player) =>
+        player.id ===
+        state.ball.ownerId
+    );
 
-    if (
-      result.success
+  /**
+   * Se non abbiamo un possessore,
+   * assegniamo il giocatore più vicino.
+   */
+  if (!holder) {
+    let nearest =
+      null;
+
+    let nearestDistance =
+      Infinity;
+
+    for (
+      const player
+      of players
     ) {
-      emitEvent({
-        type:
-          EVENT_TYPES.PASS_COMPLETE,
+      const d =
+        distance(
+          player.position,
+          state.ball
+        );
 
-        actors: [
-          owner.id,
-          target.id,
-        ],
-
-        payload: {
-          successChance:
-            result.successChance,
-        },
-      });
-
-      emitEvent({
-        type:
-          EVENT_TYPES.RECEIVE,
-
-        actors: [
-          target.id,
-        ],
-
-        causedBy:
-          state.lastEvent?.id ??
-          null,
-
-        payload: {
-          fromPlayerId:
-            owner.id,
-        },
-      });
-    } else {
-      emitEvent({
-        type:
-          EVENT_TYPES.PASS_FAILED,
-
-        actors: [
-          owner.id,
-          target.id,
-        ],
-
-        payload: {
-          successChance:
-            result.successChance,
-        },
-      });
-
-      /**
-       * Per ora un passaggio fallito
-       * rende la palla contesa.
-       *
-       * Il vero sistema di intercetto
-       * arriverà nel prossimo blocco.
-       */
-      state.possession =
-        POSSESSION.CONTESTED;
-
-      state.ball.ownerId =
-        null;
-
-      for (
-        const teamState of [
-          state.teams.home,
-          state.teams.away,
-        ]
+      if (
+        d <
+        nearestDistance
       ) {
-        for (
-          const player
-          of teamState.players
-        ) {
-          player.hasBall =
-            false;
-        }
+        nearest =
+          player;
+
+        nearestDistance =
+          d;
       }
+    }
 
-      emitEvent({
-        type:
-          EVENT_TYPES.POSSESSION_CONTESTED,
+    holder =
+      nearest;
 
-        actors: [
-          owner.id,
-          target.id,
-        ],
-
-        payload: {
-          reason:
-            "failed_pass",
-        },
+    if (holder) {
+      setPossession({
+        state,
+        side,
+        playerId:
+          holder.id,
       });
     }
   }
+
+  if (!holder) {
+    return;
+  }
+
+  /**
+   * Non facciamo un passaggio
+   * ad ogni singolo tick.
+   *
+   * Il possessore deve avere
+   * un breve tempo di controllo.
+   */
+  const actionRoll =
+    rng.float();
+
+  /**
+   * 12% circa di possibilità
+   * di iniziare un'azione
+   * di passaggio per tick.
+   */
+  if (
+    actionRoll >
+    0.12
+  ) {
+    return;
+  }
+
+  const receiver =
+    choosePassTarget({
+      state,
+      side,
+      passer:
+        holder,
+      rng,
+    });
+
+  if (!receiver) {
+    return;
+  }
+
+  const opponentInfo =
+    findNearestOpponent(
+      state,
+      side,
+      receiver.position
+    );
+
+  const successProbability =
+    calculatePassSuccess({
+      state,
+      passer:
+        holder,
+      receiver,
+      side,
+      rng,
+    });
+
+  const success =
+    rng.chance(
+      successProbability
+    );
+
+  /**
+   * PASS ATTEMPT
+   */
+  emitEvent({
+    type:
+      "PASS_ATTEMPT",
+
+    actors: [
+      holder.id,
+      receiver.id,
+    ],
+
+    payload: {
+      passerId:
+        holder.id,
+
+      receiverId:
+        receiver.id,
+
+      successProbability:
+        Number(
+          successProbability.toFixed(
+            3
+          )
+        ),
+
+      pressure:
+        Number(
+          clamp(
+            1 -
+              opponentInfo.distance /
+                0.25
+          ).toFixed(3)
+        ),
+    },
+  });
+
+  /**
+   * PASS RIUSCITO
+   */
+  if (success) {
+    state.ball.lastTouchPlayerId =
+      holder.id;
+
+    state.ball.ownerId =
+      receiver.id;
+
+    state.ball.x =
+      receiver.position.x;
+
+    state.ball.y =
+      receiver.position.y;
+
+    state.possession =
+      side;
+
+    holder.hasBall =
+      false;
+
+    receiver.hasBall =
+      true;
+
+    emitEvent({
+      type:
+        "PASS_COMPLETE",
+
+      actors: [
+        holder.id,
+        receiver.id,
+      ],
+
+      payload: {
+        passerId:
+          holder.id,
+
+        receiverId:
+          receiver.id,
+      },
+    });
+
+    emitEvent({
+      type:
+        "RECEIVE",
+
+      actors: [
+        receiver.id,
+      ],
+
+      payload: {
+        playerId:
+          receiver.id,
+
+        fromPlayerId:
+          holder.id,
+      },
+    });
+
+    return;
+  }
+
+  /**
+   * PASSAGGIO SBAGLIATO:
+   *
+   * cerchiamo l'avversario
+   * più vicino alla traiettoria
+   * di ricezione.
+   */
+  const opponent =
+    opponentInfo.player;
+
+  handleInterception({
+    state,
+    side,
+    passer:
+      holder,
+    receiver,
+    opponent,
+    emitEvent,
+  });
 }
