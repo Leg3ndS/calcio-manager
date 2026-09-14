@@ -1,718 +1,264 @@
 /**
- * PLAYER MOVEMENT SYSTEM
+ * PLAYER MOVEMENT SYSTEM v2
  *
- * Gestisce il movimento progressivo
- * dei giocatori sul campo.
- *
- * PRINCIPI:
- * - nessun teleport
- * - posizione attuale separata dal target
- * - velocità basata sugli attributi
- * - movimento influenzato dalla palla
- * - movimento diverso in base al ruolo
- * - mantenimento della struttura tattica
+ * Separates tactical targets from physical motion.
+ * Roles influence movement tendencies; AI remains responsible for decisions.
  */
+
+import { simulatePlayerMotion, ensurePlayerPhysicsState } from "../physics/playerPhysics.js";
+import { updateBallPhysics } from "../physics/ballPhysics.js";
 
 const FIELD_MIN = 0.025;
 const FIELD_MAX = 0.975;
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
-
-/**
- * Limita un valore.
- */
-function clamp(value, min, max) {
-  return Math.max(
-    min,
-    Math.min(max, value)
-  );
-}
-
-
-/**
- * Distanza tra due punti.
- */
 function distance(a, b) {
-  const dx =
-    (b?.x ?? 0) -
-    (a?.x ?? 0);
-
-  const dy =
-    (b?.y ?? 0) -
-    (a?.y ?? 0);
-
-  return Math.sqrt(
-    dx * dx +
-    dy * dy
-  );
+  return Math.hypot((b?.x ?? 0) - (a?.x ?? 0), (b?.y ?? 0) - (a?.y ?? 0));
 }
 
-
-/**
- * Attributo fisico.
- */
-function physicalAttribute(
-  player,
-  name,
-  fallback = 50
-) {
-  return (
-    player?.attributes?.physical?.[
-      name
-    ] ??
-    fallback
-  );
+function physicalAttribute(player, name, fallback = 50) {
+  const value = player?.attributes?.physical?.[name] ?? player?.[name];
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
 }
 
-
-/**
- * Velocità del giocatore.
- *
- * Non usiamo direttamente "velocità"
- * perché accelerazione e agilità
- * devono influenzare il movimento.
- */
-function getMovementSpeed(player) {
-  const acceleration =
-    physicalAttribute(
-      player,
-      "accelerazione"
-    );
-
-  const speed =
-    physicalAttribute(
-      player,
-      "velocita"
-    );
-
-  const agility =
-    physicalAttribute(
-      player,
-      "agilita"
-    );
-
-  const average =
-    (
-      acceleration +
-      speed +
-      agility
-    ) / 3;
-
-  /**
-   * Coordinate campo 0-1.
-   *
-   * Il valore rappresenta
-   * la distanza massima percorribile
-   * in un secondo simulato.
-   */
-  return (
-    0.018 +
-    (
-      average / 99
-    ) *
-      0.035
-  );
-}
-
-
-/**
- * Determina il ruolo principale.
- */
 function getRole(player) {
-  return (
-    player.role ??
-    player.positionRole ??
-    player.currentRole ??
+  return String(
+    player?.assignedRole ??
+    player?.role ??
+    player?.positionRole ??
+    player?.currentRole ??
+    player?.primaryRole ??
     "centrocampista"
-  );
+  ).toLowerCase();
 }
 
+function isRole(role, terms) {
+  return terms.some((term) => role.includes(term));
+}
 
-/**
- * Restituisce una piccola influenza
- * della palla sul movimento.
- */
-function getBallInfluence(
-  player,
-  ball,
-  side
-) {
-  if (!ball) {
-    return {
-      x: 0,
-      y: 0,
-    };
-  }
+function getBallInfluence(player, ball, side) {
+  if (!ball || !player?.position) return { x: 0, y: 0 };
+  const d = distance(player.position, ball);
+  if (d < 0.001) return { x: 0, y: 0 };
 
-  const d =
-    distance(
-      player.position,
-      ball
-    );
+  const influence = clamp(1 - d / 0.45, 0, 1);
+  const dx = (ball.x - player.position.x) / d;
+  const dy = (ball.y - player.position.y) / d;
+  const role = getRole(player);
 
-  /**
-   * La palla influenza maggiormente
-   * i giocatori vicini.
-   */
-  const influence =
-    clamp(
-      1 -
-        d / 0.45,
-      0,
-      1
-    );
-
-  /**
-   * Direzione verso la palla.
-   */
-  if (d < 0.001) {
-    return {
-      x: 0,
-      y: 0,
-    };
-  }
-
-  const directionX =
-    (
-      ball.x -
-      player.position.x
-    ) / d;
-
-  const directionY =
-    (
-      ball.y -
-      player.position.y
-    ) / d;
-
-  /**
-   * Non vogliamo che tutti
-   * corrano sulla palla.
-   *
-   * L'influenza viene quindi
-   * attenuata.
-   */
-  let factor =
-    influence * 0.025;
-
-  /**
-   * I difensori si muovono meno
-   * aggressivamente verso la palla.
-   */
-  const role =
-    getRole(player)
-      .toLowerCase();
-
-  if (
-    role.includes("difens") ||
-    role.includes("terzino") ||
-    role.includes("mediano")
-  ) {
-    factor *= 0.55;
-  }
-
-  /**
-   * Gli attaccanti possono
-   * allontanarsi maggiormente
-   * dalla loro posizione.
-   */
-  if (
-    role.includes("attacc") ||
-    role.includes("ala") ||
-    role.includes("trequart")
-  ) {
-    factor *= 1.20;
-  }
-
-  /**
-   * Il lato della squadra
-   * non cambia la direzione:
-   * la palla è sempre globale.
-   */
+  let factor = influence * 0.018;
+  if (isRole(role, ["difens", "terzino", "mediano"])) factor *= 0.45;
+  if (isRole(role, ["attacc", "ala", "trequart", "punta"])) factor *= 1.15;
   void side;
-
-  return {
-    x:
-      directionX *
-      factor,
-
-    y:
-      directionY *
-      factor,
-  };
+  return { x: dx * factor, y: dy * factor };
 }
 
+function getSeparationForce(player, teammates) {
+  let x = 0;
+  let y = 0;
+  for (const teammate of teammates) {
+    if (!teammate || teammate.id === player.id || teammate.onPitch === false) continue;
+    const d = distance(player.position, teammate.position);
+    if (d > 0.001 && d < 0.07) {
+      x += ((player.position.x - teammate.position.x) / d) * 0.010;
+      y += ((player.position.y - teammate.position.y) / d) * 0.010;
+    }
+  }
+  return { x, y };
+}
 
 /**
- * Piccola separazione dai compagni.
- *
- * Evita che tutti i giocatori
- * finiscano nello stesso punto.
+ * Generates a role-based movement bias. It does NOT choose an action.
+ * AI can override/augment the returned target through tacticalTarget.
  */
-function getSeparationForce(
-  player,
-  teammates
-) {
-  let forceX = 0;
-  let forceY = 0;
+function getRoleMovementBias(player, ball, side, teammates, opponents) {
+  const role = getRole(player);
+  const p = player.position ?? { x: 0.5, y: 0.5 };
+  const direction = side === "home" ? 1 : -1;
+  const ballX = ball?.x ?? 0.5;
+  const ballY = ball?.y ?? 0.5;
+  let x = 0;
+  let y = 0;
 
-  for (
-    const teammate
-    of teammates
-  ) {
-    if (
-      teammate.id ===
-      player.id
-    ) {
-      continue;
+  // Central midfielders: offer passing lanes and occupy the centre/half-space.
+  if (isRole(role, ["mezzala"])) {
+    x += direction * 0.010;
+    y += p.y < 0.5 ? -0.010 : 0.010;
+    if (ballX * direction > 0.45) x += direction * 0.012;
+  } else if (isRole(role, ["regista arretrato", "regista"])) {
+    x += direction * 0.004;
+    y += (ballY - p.y) * 0.08;
+  } else if (isRole(role, ["mediano", "centrocampista difensivo"])) {
+    x += (ballX - p.x) * 0.025;
+    y += (0.5 - p.y) * 0.025;
+  } else if (isRole(role, ["trequartista", "rifinitore"])) {
+    x += direction * 0.014;
+    y += (ballY - p.y) * 0.06;
+  }
+
+  // Wide roles maintain width and react to the ball side.
+  if (isRole(role, ["ala", "esterno", "terzino"])) {
+    const preferredY = p.y < 0.5 ? 0.14 : 0.86;
+    y += (preferredY - p.y) * 0.035;
+    if (isRole(role, ["terzino di spinta", "terzino offensivo", "esterno a tutta fascia"])) {
+      x += direction * 0.014;
     }
-
-    const d =
-      distance(
-        player.position,
-        teammate.position
-      );
-
-    if (
-      d < 0.075 &&
-      d > 0.001
-    ) {
-      const dx =
-        player.position.x -
-        teammate.position.x;
-
-      const dy =
-        player.position.y -
-        teammate.position.y;
-
-      forceX +=
-        (
-          dx / d
-        ) *
-        0.012;
-
-      forceY +=
-        (
-          dy / d
-        ) *
-        0.012;
+    if (isRole(role, ["terzino invertito", "esterno invertito"])) {
+      y += (0.5 - p.y) * 0.020;
     }
   }
 
-  return {
-    x: forceX,
-    y: forceY,
-  };
+  // Attackers threaten depth, but only when space exists.
+  if (isRole(role, ["attaccante avanzato", "attaccante di pressione", "seconda punta", "trequartista avanzato"])) {
+    x += direction * 0.018;
+    const nearestOpponent = opponents.reduce((best, opponent) => {
+      if (!opponent?.position) return best;
+      const d = distance(p, opponent.position);
+      return d < best ? d : best;
+    }, Infinity);
+    if (nearestOpponent > 0.10) x += direction * 0.012;
+  }
+
+  if (isRole(role, ["attaccante boa"])) {
+    x += direction * 0.008;
+    y += (0.5 - p.y) * 0.020;
+  }
+
+  // Keep a little structure around the ball rather than making everyone chase it.
+  if (teammates.length > 0) {
+    const separation = getSeparationForce(player, teammates);
+    x += separation.x * 0.25;
+    y += separation.y * 0.25;
+  }
+
+  return { x, y };
 }
 
-
-/**
- * Aggiorna il target del giocatore.
- *
- * Il target viene modificato
- * gradualmente, non la posizione.
- */
 export function updatePlayerTarget({
   player,
   ball,
   teammates = [],
   opponents = [],
-  side,
+  side = "home",
   tacticalTarget = null,
 }) {
-  if (!player) {
-    return;
+  if (!player) return;
+  player.position = player.position ?? { x: 0.5, y: 0.5 };
+
+  const base = tacticalTarget ?? player.targetPosition ?? player.position;
+  const roleBias = getRoleMovementBias(player, ball, side, teammates, opponents);
+  const ballInfluence = getBallInfluence(player, ball, side);
+  const separation = getSeparationForce(player, teammates);
+
+  const closestOpponent = opponents.reduce((best, opponent) => {
+    if (!opponent?.position) return best;
+    return Math.min(best, distance(player.position, opponent.position));
+  }, Infinity);
+
+  // Pressure causes attackers to seek an escape lane; defenders preserve shape.
+  const role = getRole(player);
+  let pressureX = 0;
+  let pressureY = 0;
+  if (closestOpponent < 0.055 && isRole(role, ["attacc", "ala", "trequart"])) {
+    pressureY = player.position.y < 0.5 ? -0.012 : 0.012;
   }
-
-  if (!player.position) {
-    player.position = {
-      x: 0.5,
-      y: 0.5,
-    };
-  }
-
-  /**
-   * Base tattica.
-   */
-  const base =
-    tacticalTarget ??
-    player.targetPosition ??
-    player.position;
-
-  let targetX =
-    base.x;
-
-  let targetY =
-    base.y;
-
-
-  /**
-   * Influenza della palla.
-   */
-  const ballInfluence =
-    getBallInfluence(
-      player,
-      ball,
-      side
-    );
-
-  targetX +=
-    ballInfluence.x;
-
-  targetY +=
-    ballInfluence.y;
-
-
-  /**
-   * Separazione dai compagni.
-   */
-  const separation =
-    getSeparationForce(
-      player,
-      teammates
-    );
-
-  targetX +=
-    separation.x;
-
-  targetY +=
-    separation.y;
-
-
-  /**
-   * Pressione semplice:
-   *
-   * se un avversario è molto vicino,
-   * il giocatore tende a non restare
-   * esattamente sullo stesso punto.
-   */
-  let closestOpponentDistance =
-    Infinity;
-
-  for (
-    const opponent
-    of opponents
-  ) {
-    const d =
-      distance(
-        player.position,
-        opponent.position
-      );
-
-    if (
-      d <
-      closestOpponentDistance
-    ) {
-      closestOpponentDistance =
-        d;
-    }
-  }
-
-
-  if (
-    closestOpponentDistance <
-    0.055
-  ) {
-    const role =
-      getRole(player)
-        .toLowerCase();
-
-    /**
-     * Gli attaccanti cercano
-     * maggiormente lo spazio.
-     */
-    if (
-      role.includes("attacc") ||
-      role.includes("ala") ||
-      role.includes("trequart")
-    ) {
-      targetY +=
-        player.position.y <
-        0.5
-          ? -0.018
-          : 0.018;
-    }
-  }
-
 
   player.targetPosition = {
-    x:
-      clamp(
-        targetX,
-        FIELD_MIN,
-        FIELD_MAX
-      ),
-
-    y:
-      clamp(
-        targetY,
-        FIELD_MIN,
-        FIELD_MAX
-      ),
+    x: clamp(base.x + roleBias.x + ballInfluence.x + separation.x * 0.5 + pressureX, FIELD_MIN, FIELD_MAX),
+    y: clamp(base.y + roleBias.y + ballInfluence.y + separation.y * 0.5 + pressureY, FIELD_MIN, FIELD_MAX),
   };
+
+  player.matchState = player.matchState ?? {};
+  player.matchState.targetPosition = { ...player.targetPosition };
 }
 
+export function updatePlayerMovement(player, deltaSimulationSeconds = 0.1) {
+  if (!player || player.onPitch === false || player.matchState?.onPitch === false) return;
+  player.position = player.position ?? { x: 0.5, y: 0.5 };
+  player.targetPosition = player.targetPosition ?? { ...player.position };
+  ensurePlayerPhysicsState(player);
 
-/**
- * Movimento progressivo.
- */
-export function updatePlayerMovement(
-  player,
-  deltaSimulationSeconds = 0.6
-) {
-  if (!player) {
-    return;
+  // Very large clock steps are subdivided to prevent tunnelling/teleport-like motion.
+  let remaining = Math.max(0, Number(deltaSimulationSeconds) || 0);
+  const maxStep = 0.1;
+  while (remaining > 0) {
+    const dt = Math.min(maxStep, remaining);
+    simulatePlayerMotion({
+      player,
+      target: player.targetPosition,
+      deltaSeconds: dt,
+      desiredSpeedMultiplier: player.currentAction === "sprint" ? 1.08 : 1,
+    });
+    remaining -= dt;
   }
 
-  if (!player.position) {
-    player.position = {
-      x: 0.5,
-      y: 0.5,
-    };
-  }
-
-  if (!player.targetPosition) {
-    player.targetPosition = {
-      x:
-        player.position.x,
-
-      y:
-        player.position.y,
-    };
-  }
-
-  const current =
-    player.position;
-
-  const target =
-    player.targetPosition;
-
-  const d =
-    distance(
-      current,
-      target
-    );
-
-  if (
-    d < 0.001
-  ) {
-    player.position = {
-      x:
-        target.x,
-
-      y:
-        target.y,
-    };
-
-    player.velocity = {
-      x: 0,
-      y: 0,
-    };
-
-    return;
-  }
-
-
-  const speed =
-    getMovementSpeed(
-      player
-    );
-
-  const maxMovement =
-    speed *
-    deltaSimulationSeconds;
-
-  const movement =
-    Math.min(
-      maxMovement,
-      d
-    );
-
-  const ratio =
-    movement /
-    d;
-
-
-  const nextX =
-    current.x +
-    (
-      target.x -
-      current.x
-    ) *
-    ratio;
-
-  const nextY =
-    current.y +
-    (
-      target.y -
-      current.y
-    ) *
-    ratio;
-
-
-  const previousX =
-    current.x;
-
-  const previousY =
-    current.y;
-
-
-  player.position = {
-    x:
-      clamp(
-        nextX,
-        FIELD_MIN,
-        FIELD_MAX
-      ),
-
-    y:
-      clamp(
-        nextY,
-        FIELD_MIN,
-        FIELD_MAX
-      ),
+  player.targetPosition = {
+    x: clamp(player.targetPosition.x, FIELD_MIN, FIELD_MAX),
+    y: clamp(player.targetPosition.y, FIELD_MIN, FIELD_MAX),
   };
 
-
-  player.velocity = {
-    x:
-      player.position.x -
-      previousX,
-
-    y:
-      player.position.y -
-      previousY,
-  };
-
-
-  /**
-   * Informazioni utili
-   * per Debug Mode.
-   */
-  player.runtimeMovement = {
-    distanceToTarget:
-      d,
-
-    speed,
-
-    moving:
-      movement > 0.0001,
-
-    target: {
-      x:
-        player.targetPosition.x,
-
-      y:
-        player.targetPosition.y,
-    },
-  };
+  player.matchState = player.matchState ?? {};
+  player.matchState.actualPosition = { ...player.position };
+  player.matchState.targetPosition = { ...player.targetPosition };
+  player.matchState.velocity = { ...player.velocity };
 }
 
-
-/**
- * Aggiorna una squadra.
- */
 export function updateTeamMovement({
   players = [],
   opponents = [],
   ball = null,
   side = "home",
   tacticalTargets = {},
-  deltaSimulationSeconds = 0.6,
+  deltaSimulationSeconds = 0.1,
 }) {
-  /**
-   * Prima aggiorniamo i target
-   * di tutti i giocatori.
-   */
-  for (
-    const player
-    of players
-  ) {
+  for (const player of players) {
+    if (!player || player.onPitch === false || player.matchState?.onPitch === false) continue;
     updatePlayerTarget({
       player,
-
       ball,
-
-      teammates:
-        players,
-
+      teammates: players,
       opponents,
-
       side,
-
-      tacticalTarget:
-        tacticalTargets[
-          player.id
-        ] ??
-        null,
+      tacticalTarget: tacticalTargets[player.id] ?? null,
     });
   }
 
-
-  /**
-   * Poi muoviamo i giocatori.
-   *
-   * Separare target e movimento
-   * evita che un giocatore
-   * influenzi immediatamente
-   * il target di un altro nello
-   * stesso ciclo.
-   */
-  for (
-    const player
-    of players
-  ) {
-    updatePlayerMovement(
-      player,
-      deltaSimulationSeconds
-    );
+  for (const player of players) {
+    updatePlayerMovement(player, deltaSimulationSeconds);
   }
 }
 
-
-/**
- * Aggiorna entrambe le squadre.
- */
 export function updateAllPlayerMovement({
   homePlayers = [],
   awayPlayers = [],
   ball = null,
   homeTacticalTargets = {},
   awayTacticalTargets = {},
-  deltaSimulationSeconds = 0.6,
+  deltaSimulationSeconds = 0.1,
 }) {
   updateTeamMovement({
-    players:
-      homePlayers,
-
-    opponents:
-      awayPlayers,
-
+    players: homePlayers,
+    opponents: awayPlayers,
     ball,
-
-    side:
-      "home",
-
-    tacticalTargets:
-      homeTacticalTargets,
-
+    side: "home",
+    tacticalTargets: homeTacticalTargets,
     deltaSimulationSeconds,
   });
-
 
   updateTeamMovement({
-    players:
-      awayPlayers,
-
-    opponents:
-      homePlayers,
-
+    players: awayPlayers,
+    opponents: homePlayers,
     ball,
-
-    side:
-      "away",
-
-    tacticalTargets:
-      awayTacticalTargets,
-
+    side: "away",
+    tacticalTargets: awayTacticalTargets,
     deltaSimulationSeconds,
   });
+
+  // The ball is advanced only when it is not controlled by a player.
+  if (ball && !ball.ownerId) {
+    updateBallPhysics(ball, Math.min(0.25, Math.max(0, Number(deltaSimulationSeconds) || 0)));
+  }
 }
+
+export { getRole, physicalAttribute };
