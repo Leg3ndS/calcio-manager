@@ -1,5 +1,23 @@
 // src/engine/possession/possessionSystem.js
 // Possession/action execution layer. Runtime coordinates are 0..1.
+// Referee-aware V3: restarts and loose-ball rulings are delegated to referee.js.
+
+import { Referee } from "../referee/referee.js";
+
+const refereeInstances = new WeakMap();
+
+function getReferee(state, rng) {
+  if (!state || typeof state !== "object") return new Referee({}, rng);
+  let referee = refereeInstances.get(state);
+  if (!referee) {
+    referee = new Referee(state.referee ?? {}, rng);
+    refereeInstances.set(state, referee);
+  } else {
+    referee.setRng(rng);
+  }
+  return referee;
+}
+
 
 const POSSESSION = {
   HOME: "home",
@@ -348,8 +366,20 @@ function executePass(state, player, decision, rng, emitEvent) {
   const loose = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
   clearPossession(state, { contested: false });
   setBallPosition(state, loose);
+  state.ball.state = "loose";
   emit(emitEvent, "PASS_FAILED", { passerId: player.id, receiverId: receiver.id, probability: finalProbability, roll, x: loose.x, y: loose.y }, player.id);
-  return { executed: true, result: "failed", probability: finalProbability };
+
+  // The referee resolves the loose-ball situation instead of leaving a
+  // stale team possession behind. This is deterministic for the same seed.
+  const referee = getReferee(state, rng);
+  const ruling = referee.decideLooseBall(state, { reason: "pass_failed" });
+  emit(emitEvent, "REFEREE_DECISION", { decision: ruling.type, reason: ruling.reason, playerId: ruling.playerId ?? null, side: ruling.side ?? null, confidence: ruling.confidence ?? null }, ruling.playerId ?? player.id);
+  if (ruling.type === "POSSESSION") {
+    setPossession(state, ruling.side, ruling.playerId, { silent: true });
+    emit(emitEvent, "POSSESSION_WON", { side: ruling.side, playerId: ruling.playerId, reason: "referee_loose_ball" }, ruling.playerId);
+    return { executed: true, result: "failed_recovered", probability: finalProbability, ruling };
+  }
+  return { executed: true, result: "failed", probability: finalProbability, ruling };
 }
 
 function dribbleProbability(state, player) {
@@ -378,6 +408,8 @@ function executeDribble(state, player, decision, rng, emitEvent) {
     return { executed: true, result: "completed" };
   }
   if (opponent) {
+    // The referee still evaluates the contact outcome in the future tackle
+    // layer; for a pure failed dribble the nearest opponent wins the ball.
     setPossession(state, getPlayerSide(state, opponent), opponent.id, { silent: true });
     emit(emitEvent, "DRIBBLE_FAILED", { playerId: player.id, opponentId: opponent.id, probability, roll }, opponent.id);
     emit(emitEvent, "POSSESSION_WON", { side: getPlayerSide(state, opponent), playerId: opponent.id, reason: "dribble_failed" }, opponent.id);
@@ -385,7 +417,15 @@ function executeDribble(state, player, decision, rng, emitEvent) {
   }
   clearPossession(state, { contested: false });
   emit(emitEvent, "DRIBBLE_FAILED", { playerId: player.id, probability, roll, looseBall: true }, player.id);
-  return { executed: true, result: "loose" };
+  const referee = getReferee(state, rng);
+  const ruling = referee.decideLooseBall(state, { reason: "dribble_failed" });
+  emit(emitEvent, "REFEREE_DECISION", { decision: ruling.type, reason: ruling.reason, playerId: ruling.playerId ?? null, side: ruling.side ?? null }, player.id);
+  if (ruling.type === "POSSESSION") {
+    setPossession(state, ruling.side, ruling.playerId, { silent: true });
+    emit(emitEvent, "POSSESSION_WON", { side: ruling.side, playerId: ruling.playerId, reason: "referee_loose_ball" }, ruling.playerId);
+    return { executed: true, result: "lost_recovered", ruling };
+  }
+  return { executed: true, result: "loose", ruling };
 }
 
 function executeCarry(state, player, rng, emitEvent) {
@@ -423,8 +463,24 @@ function executeShoot(state, player, decision, rng, emitEvent) {
 
   if (roll > probability) {
     emit(emitEvent, "SHOT_MISSED", { playerId: player.id, probability, roll }, player.id);
+
+    // A missed shot that goes out is not an indefinite loose ball:
+    // the referee awards a goal kick to the defending team.
     clearPossession(state, { contested: false });
-    return { executed: true, result: "miss" };
+    setBallPosition(state, pos);
+    state.ball.state = "goal_kick";
+
+    const referee = getReferee(state, rng);
+    const ruling = referee.decideMissedShot(state, { attackingSide: side });
+    emit(emitEvent, "REFEREE_DECISION", { decision: ruling.type, restart: ruling.restart ?? null, side: ruling.side ?? null, playerId: ruling.playerId ?? null, reason: ruling.reason }, player.id);
+
+    if (ruling.type === "RESTART" && ruling.playerId) {
+      setPossession(state, ruling.side, ruling.playerId, { silent: true });
+      setBallPosition(state, playerPosition(getPlayerById(state, ruling.playerId)));
+      state.ball.state = "goal_kick";
+      emit(emitEvent, "GOAL_KICK", { side: ruling.side, playerId: ruling.playerId, reason: ruling.reason }, ruling.playerId);
+    }
+    return { executed: true, result: "miss", ruling };
   }
 
   const goalkeeperQuality = keeper ? (getAttr(keeper, "riflessi") + getAttr(keeper, "posizionamento") + getAttr(keeper, "unoControUno")) / (99 * 3) : 0.50;
@@ -584,26 +640,14 @@ function applyGoal(state, side, scorer, rng, emitEvent, probability, roll) {
 }
 
 function recoverLooseBall(state, rng, emitEvent) {
-  const ball = ballPosition(state);
-  const candidates = [];
-  for (const player of getAllPlayers(state).filter(active)) {
-    const d = distance(playerPosition(player), ball);
-    if (d <= 0.13) {
-      const weight = (1 - clamp(d / 0.13)) * ((getAttr(player, "reattivita") / 99) * 0.40 + (getAttr(player, "anticipazione") / 99) * 0.35 + (getAttr(player, "posizionamento") / 99) * 0.25);
-      candidates.push({ player, weight });
-    }
-  }
-  const total = candidates.reduce((s, x) => s + Math.max(0, x.weight), 0);
-  if (!candidates.length || total <= 0) return null;
-  let cursor = rng01(rng) * total;
-  let selected = candidates[candidates.length - 1].player;
-  for (const item of candidates) {
-    cursor -= Math.max(0, item.weight);
-    if (cursor <= 0) { selected = item.player; break; }
-  }
-  setPossession(state, getPlayerSide(state, selected), selected.id, { silent: true });
-  emit(emitEvent, "POSSESSION_WON", { side: getPlayerSide(state, selected), playerId: selected.id, reason: "loose_ball_recovery" }, selected.id);
-  return selected;
+  const referee = getReferee(state, rng);
+  const ruling = referee.decideLooseBall(state, { reason: "loose_ball_recovery" });
+  emit(emitEvent, "REFEREE_DECISION", { decision: ruling.type, reason: ruling.reason, playerId: ruling.playerId ?? null, side: ruling.side ?? null, confidence: ruling.confidence ?? null }, ruling.playerId ?? null);
+  if (ruling.type !== "POSSESSION") return null;
+
+  setPossession(state, ruling.side, ruling.playerId, { silent: true });
+  emit(emitEvent, "POSSESSION_WON", { side: ruling.side, playerId: ruling.playerId, reason: "referee_loose_ball_recovery" }, ruling.playerId);
+  return getPlayerById(state, ruling.playerId);
 }
 
 function normalizeRuntimeState(state) {
