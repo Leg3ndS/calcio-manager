@@ -147,9 +147,10 @@ function App() {
   }, []);
 
   /**
-   * Copia tutto il log della partita.
+   * Scarica tutto il log della partita
+   * come file TXT.
    */
-  async function copyFullMatchLog() {
+  function downloadFullMatchLog() {
     const engine =
       engineRef.current;
 
@@ -213,6 +214,11 @@ function App() {
         fullEventsRef.current,
     };
 
+    /**
+     * JSON formattato:
+     * rimane un TXT leggibile ma conserva
+     * tutta la struttura del log.
+     */
     const text =
       JSON.stringify(
         log,
@@ -221,12 +227,90 @@ function App() {
       );
 
     try {
-      await navigator.clipboard.writeText(
-        text
+      const blob =
+        new Blob(
+          [text],
+          {
+            type:
+              "text/plain;charset=utf-8",
+          }
+        );
+
+      const url =
+        URL.createObjectURL(
+          blob
+        );
+
+      /**
+       * Genera un nome file leggibile.
+       */
+      const now =
+        new Date();
+
+      const year =
+        now.getFullYear();
+
+      const month =
+        String(
+          now.getMonth() + 1
+        ).padStart(
+          2,
+          "0"
+        );
+
+      const day =
+        String(
+          now.getDate()
+        ).padStart(
+          2,
+          "0"
+        );
+
+      const hours =
+        String(
+          now.getHours()
+        ).padStart(
+          2,
+          "0"
+        );
+
+      const minutes =
+        String(
+          now.getMinutes()
+        ).padStart(
+          2,
+          "0"
+        );
+
+      const filename =
+        `calcio-manager-match-${year}-${month}-${day}-${hours}${minutes}.txt`;
+
+      const link =
+        document.createElement(
+          "a"
+        );
+
+      link.href = url;
+
+      link.download =
+        filename;
+
+      document.body.appendChild(
+        link
+      );
+
+      link.click();
+
+      document.body.removeChild(
+        link
+      );
+
+      URL.revokeObjectURL(
+        url
       );
 
       setCopyStatus(
-        `LOG COPIATO — ${fullEventsRef.current.length} eventi`
+        `LOG SCARICATO — ${fullEventsRef.current.length} eventi`
       );
 
       setTimeout(() => {
@@ -234,70 +318,19 @@ function App() {
       }, 3000);
     } catch (error) {
       console.error(
-        "COPY ERROR:",
+        "LOG DOWNLOAD ERROR:",
         error
       );
 
-      /**
-       * Fallback per browser/dispositivi
-       * dove Clipboard API non è disponibile.
-       */
-      try {
-        const textarea =
-          document.createElement(
-            "textarea"
-          );
-
-        textarea.value = text;
-
-        textarea.style.position =
-          "fixed";
-
-        textarea.style.left =
-          "-9999px";
-
-        document.body.appendChild(
-          textarea
-        );
-
-        textarea.focus();
-        textarea.select();
-
-        document.execCommand(
-          "copy"
-        );
-
-        document.body.removeChild(
-          textarea
-        );
-
-        setCopyStatus(
-          `LOG COPIATO — ${fullEventsRef.current.length} eventi`
-        );
-
-        setTimeout(() => {
-          setCopyStatus("");
-        }, 3000);
-      } catch (fallbackError) {
-        console.error(
-          "COPY FALLBACK ERROR:",
-          fallbackError
-        );
-
-        setCopyStatus(
-          "ERRORE NELLA COPIA DEL LOG"
-        );
-      }
+      setCopyStatus(
+        "ERRORE NEL DOWNLOAD DEL LOG"
+      );
     }
   }
 
   /**
-   * Cancella il log locale
-   * e prepara una nuova partita.
-   *
-   * Per ora il pulsante non viene
-   * mostrato: lo teniamo disponibile
-   * per il sistema di restart futuro.
+   * Numero totale degli eventi
+   * presenti nel log completo.
    */
   function getFullLogSize() {
     return fullEventsRef.current.length;
@@ -530,7 +563,7 @@ function App() {
 
             <button
               onClick={
-                copyFullMatchLog
+                downloadFullMatchLog
               }
               style={{
                 border:
@@ -549,7 +582,7 @@ function App() {
                   "600",
               }}
             >
-              📋 COPIA LOG COMPLETO
+              ⬇️ SCARICA LOG .TXT
             </button>
           </div>
 
