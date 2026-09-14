@@ -39,8 +39,7 @@ button {
 .topbar {
   width: min(1200px, 94%);
   margin: auto;
-  padding: 24px 0 25px;
-
+  padding: 24px 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -56,37 +55,30 @@ button {
 
 h1 {
   margin: 5px 0 0;
-
   font-size: clamp(23px, 4vw, 35px);
   line-height: 1;
-
   letter-spacing: -1.2px;
 }
 
 .match-score {
   position: relative;
-
   display: grid;
   grid-template-columns:
     minmax(65px, 100px)
     auto
     minmax(65px, 100px);
-
   align-items: center;
-
   text-align: center;
 }
 
 .team-name {
   color: #bdc9c2;
-
   font-size: 11px;
   font-weight: 900;
 }
 
 .score {
   padding: 0 12px;
-
   font-size: 31px;
   font-weight: 950;
 }
@@ -98,39 +90,24 @@ h1 {
 
 .match-time {
   position: absolute;
-
   left: 50%;
   top: 39px;
-
   transform: translateX(-50%);
-
   color: #8ca097;
-
   font-size: 12px;
   font-weight: 700;
 }
-
-/* ============================================================
-   MAIN
-   ============================================================ */
 
 main {
   width: min(1200px, 94%);
   margin: auto;
 }
 
-/* ============================================================
-   STADIUM
-   ============================================================ */
-
 .stadium {
   padding: 13px;
-
   border: 1px solid #293b32;
   border-radius: 19px;
-
   background: #101b15;
-
   box-shadow:
     0 25px 80px rgba(0, 0, 0, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.025);
@@ -138,15 +115,11 @@ main {
 
 .stand {
   height: 35px;
-
   display: flex;
   justify-content: space-around;
   align-items: center;
-
   overflow: hidden;
-
   border-radius: 9px;
-
   background:
     repeating-linear-gradient(
       90deg,
@@ -155,11 +128,8 @@ main {
       #1b2721 12px,
       #1b2721 24px
     );
-
   color: #718178;
-
   font-size: 9px;
-
   opacity: 0.9;
 }
 
@@ -169,12 +139,9 @@ main {
 
 .pitch {
   position: relative;
-
   width: 100%;
   aspect-ratio: 1.68 / 1;
-
   overflow: hidden;
-
   border: 3px solid rgba(255, 255, 255, 0.85);
   border-radius: 8px;
 
@@ -192,81 +159,58 @@ main {
     0 12px 35px rgba(0, 0, 0, 0.3);
 }
 
-/* ============================================================
-   CAMPO
-   ============================================================ */
-
 .center-line {
   position: absolute;
-
   left: 50%;
   top: 0;
-
   width: 2px;
   height: 100%;
-
   background: rgba(255, 255, 255, 0.82);
 }
 
 .center-circle {
   position: absolute;
-
   left: 41.5%;
   top: 32%;
-
   width: 17%;
   height: 36%;
-
   border: 2px solid rgba(255, 255, 255, 0.82);
-
   border-radius: 50%;
 }
 
 .center-dot {
   position: absolute;
-
   left: calc(50% - 4px);
   top: calc(50% - 4px);
-
   width: 8px;
   height: 8px;
-
   border-radius: 50%;
-
   background: white;
 }
 
 .penalty-area {
   position: absolute;
-
   top: 25%;
-
   width: 15%;
   height: 50%;
-
   border: 2px solid rgba(255, 255, 255, 0.82);
 }
 
 .penalty-area.left {
   left: -2px;
-
   border-left: none;
 }
 
 .penalty-area.right {
   right: -2px;
-
   border-right: none;
 }
 
 .goal-area {
   position: absolute;
-
   top: 27%;
-
   width: 45%;
   height: 46%;
-
   border: 2px solid rgba(255, 255, 255, 0.82);
 }
 
@@ -282,15 +226,11 @@ main {
 
 .penalty-spot {
   position: absolute;
-
   top: calc(50% - 4px);
-
   width: 8px;
   height: 8px;
-
   border-radius: 50%;
-
-  background: rgba(255, 255, 255, 0.85);
+  background: white;
 }
 
 .penalty-spot.left {
@@ -303,12 +243,9 @@ main {
 
 .corner {
   position: absolute;
-
   width: 20px;
   height: 20px;
-
   border: 2px solid rgba(255, 255, 255, 0.85);
-
   border-radius: 50%;
 }
 
@@ -361,12 +298,12 @@ main {
     0 3px 7px rgba(0, 0, 0, 0.45),
     0 0 0 1px rgba(0, 0, 0, 0.15);
 
-  will-change: left, top;
-
   /*
-   * Nessuna transition su left/top:
-   * il Match Engine aggiorna direttamente la posizione.
+   * IMPORTANTE:
+   * niente transition su left/top.
+   * Il movimento è gestito dal Match Engine.
    */
+  will-change: left, top;
 }
 
 .player.home {
@@ -399,7 +336,7 @@ main {
 
   transform:
     translate(-50%, -50%)
-    scale(1.2);
+    scale(1.18);
 }
 
 /* ============================================================
@@ -426,6 +363,20 @@ main {
   will-change: left, top;
 }
 
+.shot-ball {
+  font-size: 17px;
+
+  filter:
+    drop-shadow(
+      0 0 5px
+      rgba(255, 255, 255, 0.55)
+    )
+    drop-shadow(
+      0 3px 3px
+      rgba(0, 0, 0, 0.55)
+    );
+}
+
 /* ============================================================
    CONTROLLI
    ============================================================ */
@@ -435,22 +386,18 @@ main {
   justify-content: center;
   align-items: center;
   flex-wrap: wrap;
-
   gap: 9px;
-
   padding: 18px 0;
 }
 
 .controls button {
   min-width: 54px;
-
   padding: 11px 15px;
 
   border: 1px solid #30453a;
   border-radius: 10px;
 
   background: #14221b;
-
   color: #dbe5df;
 
   font-size: 12px;
@@ -475,12 +422,9 @@ main {
 
 .controls .main-button {
   min-width: 175px;
-
-  background: #ffffff;
-
+  background: white;
   color: #0c1511;
-
-  border-color: #ffffff;
+  border-color: white;
 }
 
 .controls .main-button:hover {
@@ -490,7 +434,7 @@ main {
 .controls .speed.active {
   background: #284336;
   border-color: #6b927c;
-  color: #ffffff;
+  color: white;
 }
 
 /* ============================================================
@@ -499,10 +443,7 @@ main {
 
 .stats-panel {
   display: grid;
-
-  grid-template-columns:
-    repeat(4, 1fr);
-
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
 }
 
@@ -519,7 +460,6 @@ main {
 
 .stat-box span {
   display: block;
-
   margin-bottom: 7px;
 
   color: #71867a;
@@ -541,12 +481,8 @@ main {
 
 .tactics {
   display: grid;
-
-  grid-template-columns:
-    repeat(4, 1fr);
-
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
-
   margin-top: 10px;
 }
 
@@ -561,7 +497,6 @@ main {
 
 .tactics span {
   display: block;
-
   margin-bottom: 6px;
 
   color: #71867a;
@@ -577,12 +512,11 @@ main {
 }
 
 /* ============================================================
-   MODAL GIOCATORE
+   SCHEDA GIOCATORE
    ============================================================ */
 
 .modal-overlay {
   position: fixed;
-
   inset: 0;
 
   z-index: 100;
@@ -593,8 +527,7 @@ main {
 
   padding: 20px;
 
-  background:
-    rgba(0, 0, 0, 0.72);
+  background: rgba(0, 0, 0, 0.72);
 
   backdrop-filter: blur(8px);
 }
@@ -634,8 +567,6 @@ main {
 
   background: transparent;
 
-  color: #9bac a4;
-
   color: #9baca4;
 
   font-size: 29px;
@@ -646,7 +577,6 @@ main {
 .card-header {
   display: flex;
   align-items: center;
-
   gap: 15px;
 
   padding-bottom: 19px;
@@ -696,37 +626,30 @@ main {
 
 .player-info .small-role {
   color: #7f9689;
-
   font-size: 10px;
   font-weight: 900;
-
   letter-spacing: 1px;
 }
 
 .player-info h2 {
   margin: 3px 0;
-
   font-size: 24px;
   line-height: 1;
 }
 
 .player-info > span:last-child {
   color: #82958c;
-
   font-size: 11px;
 }
 
 .overall {
   margin-left: auto;
-
   text-align: center;
 }
 
 .overall small {
   display: block;
-
   color: #73887d;
-
   font-size: 9px;
   font-weight: 900;
 }
@@ -735,10 +658,6 @@ main {
   font-size: 30px;
   font-weight: 950;
 }
-
-/* ============================================================
-   ATTRIBUTI
-   ============================================================ */
 
 .attributes {
   padding-top: 19px;
@@ -751,19 +670,16 @@ main {
 .attribute-top {
   display: flex;
   justify-content: space-between;
-
   margin-bottom: 5px;
 }
 
 .attribute-top span {
   color: #d8e2dd;
-
   font-size: 12px;
 }
 
 .attribute-top strong {
-  color: #ffffff;
-
+  color: white;
   font-size: 12px;
 }
 
@@ -803,7 +719,6 @@ main {
   .topbar {
     flex-direction: column;
     align-items: stretch;
-
     padding-top: 19px;
   }
 
@@ -813,13 +728,11 @@ main {
 
   .match-score {
     width: 100%;
-
     justify-content: center;
   }
 
   .stadium {
     padding: 7px;
-
     border-radius: 14px;
   }
 
@@ -844,6 +757,10 @@ main {
     font-size: 12px;
   }
 
+  .shot-ball {
+    font-size: 14px;
+  }
+
   .controls {
     gap: 7px;
   }
@@ -857,25 +774,21 @@ main {
   }
 
   .stats-panel {
-    grid-template-columns:
-      repeat(2, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .tactics {
-    grid-template-columns:
-      repeat(2, 1fr);
+    grid-template-columns: repeat(2, 1fr);
   }
 
   .player-card {
     padding: 20px;
-
     max-height: 88vh;
   }
 
   .big-number {
     width: 55px;
     height: 55px;
-
     font-size: 22px;
   }
 
