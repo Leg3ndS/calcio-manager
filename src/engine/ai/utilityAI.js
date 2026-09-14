@@ -366,7 +366,7 @@ const ATTRIBUTE_ALIASES = {
 
   aggressivita: [
     "aggressivita",
-    "aggressività",
+    "aggressivitÃ ",
     "aggression",
   ],
 
@@ -413,7 +413,7 @@ const ATTRIBUTE_ALIASES = {
 
   adattabilita: [
     "adattabilita",
-    "adattabilità",
+    "adattabilitÃ ",
     "adaptability",
   ],
 
@@ -431,14 +431,14 @@ const ATTRIBUTE_ALIASES = {
 
   velocita: [
     "velocita",
-    "velocità",
+    "velocitÃ ",
     "pace",
     "speed",
   ],
 
   agilita: [
     "agilita",
-    "agilità",
+    "agilitÃ ",
     "agility",
   ],
 
@@ -464,7 +464,7 @@ const ATTRIBUTE_ALIASES = {
 
   reattivita: [
     "reattivita",
-    "reattività",
+    "reattivitÃ ",
     "reaction",
   ],
 
@@ -1569,7 +1569,7 @@ function scoreShot(
     profile.shoot * 0.06;
 
   // Lontano dalla porta:
-  // entra in gioco molto di più il tiro da lontano.
+  // entra in gioco molto di piÃ¹ il tiro da lontano.
   if (goalDistance > 0.32) {
     quality *=
       0.45 +
@@ -2581,38 +2581,75 @@ function evaluatePlayer(
 // TEAM
 // ============================================================
 
-function evaluateTeam(
-  players = [],
-  opponents = [],
-  ball = null,
-  side = "home",
-  teamInstructions = {},
-  possession = null
-) {
-  const playerList =
-    toPlayerArray(players);
+function evaluateTeam(config = {}, ...legacyArgs) {
+  let players;
+  let opponents;
+  let ball;
+  let side;
+  let teamInstructions;
+  let possession;
 
-  const opponentList =
-    toPlayerArray(opponents);
+  // Nuovo contratto: evaluateTeam({ ... })
+  if (
+    config &&
+    typeof config === "object" &&
+    !Array.isArray(config) &&
+    ("players" in config || "opponents" in config)
+  ) {
+    players = config.players ?? [];
+    opponents = config.opponents ?? [];
+    ball = config.ball ?? null;
+    side = config.side ?? null;
+    teamInstructions = config.teamInstructions ?? {};
+    possession = config.possession ?? null;
+  } else {
+    // CompatibilitÃ  con il vecchio contratto posizionale.
+    players = config ?? [];
+    opponents = legacyArgs[0] ?? [];
+    ball = legacyArgs[1] ?? null;
+    side = legacyArgs[2] ?? null;
+    teamInstructions = legacyArgs[3] ?? {};
+    possession = legacyArgs[4] ?? null;
+  }
 
-  const decisions = {};
+  const playerList = toPlayerArray(players);
+  const opponentList = toPlayerArray(opponents);
+
+  if (side !== "home" && side !== "away") {
+    const firstPlayer = playerList.find(Boolean);
+    side =
+      firstPlayer?.side ??
+      firstPlayer?.team ??
+      "home";
+  }
+
+  const decisions = [];
 
   for (const player of playerList) {
     if (!player) continue;
+
+    if (
+      player.onPitch === false ||
+      player.matchState?.onPitch === false
+    ) {
+      continue;
+    }
 
     const teammates =
       playerList.filter(
         (teammate) =>
           teammate &&
           teammate.id !== player.id &&
-          teammate.onPitch !== false
+          teammate.onPitch !== false &&
+          teammate.matchState?.onPitch !== false
       );
 
     const activeOpponents =
       opponentList.filter(
         (opponent) =>
           opponent &&
-          opponent.onPitch !== false
+          opponent.onPitch !== false &&
+          opponent.matchState?.onPitch !== false
       );
 
     const decision =
@@ -2626,9 +2663,31 @@ function evaluateTeam(
         possession
       );
 
-    if (player.id !== undefined) {
-      decisions[player.id] =
-        decision;
+    if (decision && typeof decision === "object") {
+      decisions.push({
+        ...decision,
+
+        playerId:
+          decision.playerId ??
+          player.id,
+
+        action:
+          decision.action ??
+          ACTIONS.NONE,
+
+        score: Number.isFinite(
+          Number(decision.score)
+        )
+          ? Number(decision.score)
+          : 0,
+      });
+    } else {
+      decisions.push({
+        playerId: player.id,
+        action: ACTIONS.NONE,
+        score: 0,
+        role: getRole(player),
+      });
     }
   }
 
@@ -2639,32 +2698,59 @@ function evaluateTeam(
 // DEBUG
 // ============================================================
 
-function evaluateTeamDebug(
-  players = [],
-  opponents = [],
-  ball = null,
-  side = "home",
-  teamInstructions = {},
-  possession = null
-) {
-  const playerList =
-    toPlayerArray(players);
+function evaluateTeamDebug(config = {}, ...legacyArgs) {
+  let players;
+  let opponents;
+  let ball;
+  let side;
+  let teamInstructions;
+  let possession;
 
-  const decisions =
-    evaluateTeam(
-      playerList,
-      opponents,
-      ball,
-      side,
-      teamInstructions,
-      possession
-    );
+  if (
+    config &&
+    typeof config === "object" &&
+    !Array.isArray(config) &&
+    ("players" in config || "opponents" in config)
+  ) {
+    players = config.players ?? [];
+    opponents = config.opponents ?? [];
+    ball = config.ball ?? null;
+    side = config.side ?? null;
+    teamInstructions = config.teamInstructions ?? {};
+    possession = config.possession ?? null;
+  } else {
+    players = config ?? [];
+    opponents = legacyArgs[0] ?? [];
+    ball = legacyArgs[1] ?? null;
+    side = legacyArgs[2] ?? null;
+    teamInstructions = legacyArgs[3] ?? {};
+    possession = legacyArgs[4] ?? null;
+  }
+
+  const playerList = toPlayerArray(players);
+  const opponentList = toPlayerArray(opponents);
+
+  if (side !== "home" && side !== "away") {
+    const firstPlayer = playerList.find(Boolean);
+    side =
+      firstPlayer?.side ??
+      firstPlayer?.team ??
+      "home";
+  }
+
+  const decisions = evaluateTeam({
+    players: playerList,
+    opponents: opponentList,
+    ball,
+    side,
+    teamInstructions,
+    possession,
+  });
 
   return {
     side,
-
     possession,
-
+    ball,
     decisions,
 
     players:
@@ -2754,9 +2840,11 @@ function evaluateTeamDebug(
           },
 
           decision:
-            decisions[
-              player.id
-            ] ?? null,
+            decisions.find(
+              (decision) =>
+                decision.playerId ===
+                player.id
+            ) ?? null,
         })
       ),
   };
