@@ -123,7 +123,8 @@ export class MatchEngine {
     this.tick = 0;
 
     /**
-     * Preparazione giocatori.
+     * Preparazione runtime
+     * dei giocatori.
      */
     this.prepareRuntimePlayers(
       homeTeam
@@ -167,10 +168,6 @@ export class MatchEngine {
         continue;
       }
 
-      /**
-       * Cerchiamo lo slot tattico
-       * corrispondente al giocatore.
-       */
       const tacticalPosition =
         shape?.positions?.[
           `slot_${index}`
@@ -191,11 +188,6 @@ export class MatchEngine {
             }
           : null;
 
-      /**
-       * Se il giocatore è titolare
-       * ma non abbiamo uno slot,
-       * recuperiamo currentState.
-       */
       if (
         !initialPosition
       ) {
@@ -248,10 +240,6 @@ export class MatchEngine {
         };
       }
 
-      /**
-       * Evitiamo che i giocatori
-       * vadano fuori dal campo.
-       */
       initialPosition.x =
         Math.max(
           0.03,
@@ -294,7 +282,7 @@ export class MatchEngine {
 
     /**
      * Garantiamo che i titolari
-     * abbiano coordinate tattiche.
+     * abbiano un target.
      */
     for (
       let index = 0;
@@ -336,6 +324,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Avvia la partita.
+   */
   start() {
     if (this.running) {
       return;
@@ -372,6 +363,10 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Ferma temporaneamente
+   * il motore.
+   */
   stop() {
     this.running = false;
 
@@ -387,6 +382,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Pausa partita.
+   */
   pause() {
     if (
       this.state.matchStatus
@@ -405,6 +403,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Riprende partita.
+   */
   resume() {
     if (
       this.state.matchStatus
@@ -430,6 +431,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Cambia velocità.
+   */
   setSpeed(speed) {
     this.clock.setSpeed(
       speed
@@ -439,6 +443,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Aggiornamento principale.
+   */
   update(deltaMs) {
     if (!this.running) {
       return;
@@ -494,158 +501,41 @@ export class MatchEngine {
   }
 
 
-  processTick(
-    clockEvent
-  ) {
-    processTick(clockEvent) {
-  this.syncClockState();
-
   /**
-   * KICKOFF -> OPEN PLAY
-   */
-  if (
-    this.state.phase ===
-    MATCH_PHASES.KICKOFF
-  ) {
-    this.state.phase =
-      MATCH_PHASES.OPEN_PLAY;
-  }
-
-
-  /**
-   * GIOCATORI ATTIVI
-   */
-  const homePlayers =
-    this.getActivePlayers(
-      this.state.teams.home
-    );
-
-  const awayPlayers =
-    this.getActivePlayers(
-      this.state.teams.away
-    );
-
-
-  /**
-   * PRIMO POSSESSO
-   */
-  if (
-    this.state.possession ===
-      POSSESSION.NONE &&
-    this.tick === 1
-  ) {
-    this.initializePossession();
-  }
-
-
-  /**
-   * MOVIMENTO
+   * =========================================================
+   * PROCESS TICK
+   * =========================================================
    *
-   * La palla viene passata
-   * direttamente al sistema
-   * di movimento.
-   */
-  updateAllPlayerMovement({
-    homePlayers,
-
-    awayPlayers,
-
-    ball:
-      this.state.ball,
-
-    deltaSimulationSeconds:
-      clockEvent.simulatedSeconds,
-  });
-
-
-  /**
-   * SPAZIAL GRID
+   * Ordine:
    *
-   * Dopo il movimento ricalcoliamo
-   * lo spazio.
+   * 1. cambio fase
+   * 2. giocatori attivi
+   * 3. primo possesso
+   * 4. movimento
+   * 5. spatial grid
+   * 6. palla contesa
+   * 7. Utility AI
+   * 8. possesso/passaggio
+   * 9. nuova spatial grid
+   * 10. evento tick
    */
-  this.updateSpatialState();
+  processTick(clockEvent) {
+    this.syncClockState();
 
-
-  /**
-   * PALLA CONTESA
-   */
-  if (
-    this.state.possession ===
-    POSSESSION.CONTESTED
-  ) {
-    this.resolveContestedBall();
-  }
-
-
-  /**
-   * UTILITY AI
-   */
-  this.calculateDecisions();
-
-
-  /**
-   * POSSESSO
-   */
-  if (
-    this.state.possession ===
-      POSSESSION.HOME ||
-    this.state.possession ===
-      POSSESSION.AWAY
-  ) {
-    processPossession({
-      state:
-        this.state,
-
-      rng:
-        this.rng,
-
-      emitEvent:
-        (eventData) =>
-          this.emitEvent(
-            this.createEvent(
-              eventData.type,
-              eventData
-            )
-          ),
-    });
-  }
-
-
-  /**
-   * RICALCOLO SPAZIO
-   *
-   * Dopo l'azione della palla
-   * aggiorniamo nuovamente
-   * l'influenza territoriale.
-   */
-  this.updateSpatialState();
-
-
-  /**
-   * EVENTO TICK
-   */
-  this.emitEvent(
-    this.createEvent(
-      "ENGINE_TICK",
-      {
-        payload: {
-          simulatedSeconds:
-            clockEvent
-              .simulatedSeconds,
-
-          speed:
-            this.clock.speed,
-
-          tick:
-            this.tick,
-        },
-      }
-    )
-  );
-}
     /**
-     * Giocatori attivi.
+     * KICKOFF -> OPEN PLAY
+     */
+    if (
+      this.state.phase ===
+      MATCH_PHASES.KICKOFF
+    ) {
+      this.state.phase =
+        MATCH_PHASES.OPEN_PLAY;
+    }
+
+
+    /**
+     * GIOCATORI ATTIVI
      */
     const homePlayers =
       this.getActivePlayers(
@@ -657,28 +547,9 @@ export class MatchEngine {
         this.state.teams.away
       );
 
-    /**
-     * Movimento progressivo.
-     *
-     * Usiamo il tempo simulato
-     * del tick.
-     */
-    updateAllPlayerMovement({
-      homePlayers,
-      awayPlayers,
-
-      deltaSimulationSeconds:
-        clockEvent
-          .simulatedSeconds,
-    });
 
     /**
-     * Spatial Grid.
-     */
-    this.updateSpatialState();
-
-    /**
-     * Primo possesso.
+     * PRIMO POSSESSO
      */
     if (
       this.state.possession ===
@@ -688,8 +559,43 @@ export class MatchEngine {
       this.initializePossession();
     }
 
+
     /**
-     * Palla contesa.
+     * MOVIMENTO PROGRESSIVO
+     *
+     * I giocatori non vengono
+     * teletrasportati.
+     *
+     * Il movimento avviene
+     * progressivamente verso
+     * il target.
+     */
+    updateAllPlayerMovement({
+      homePlayers,
+
+      awayPlayers,
+
+      ball:
+        this.state.ball,
+
+      deltaSimulationSeconds:
+        clockEvent
+          .simulatedSeconds,
+    });
+
+
+    /**
+     * SPATIAL GRID
+     *
+     * Aggiorniamo spazio,
+     * pressione e influenza
+     * dopo il movimento.
+     */
+    this.updateSpatialState();
+
+
+    /**
+     * PALLA CONTESA
      */
     if (
       this.state.possession ===
@@ -698,13 +604,24 @@ export class MatchEngine {
       this.resolveContestedBall();
     }
 
+
     /**
-     * AI.
+     * UTILITY AI
      */
     this.calculateDecisions();
 
+
     /**
-     * Possesso.
+     * POSSESSO
+     *
+     * La possession system
+     * può produrre:
+     *
+     * PASS_ATTEMPT
+     * PASS_COMPLETE
+     * RECEIVE
+     * PASS_INTERCEPTED
+     * POSSESSION_WON
      */
     if (
       this.state.possession ===
@@ -730,14 +647,19 @@ export class MatchEngine {
       });
     }
 
+
     /**
-     * Aggiorniamo nuovamente
-     * lo spazio dopo l'azione.
+     * RICALCOLO SPAZIO
+     *
+     * Dopo l'azione della palla
+     * la situazione spaziale può
+     * essere cambiata.
      */
     this.updateSpatialState();
 
+
     /**
-     * Tick.
+     * EVENTO TICK
      */
     this.emitEvent(
       this.createEvent(
@@ -750,6 +672,9 @@ export class MatchEngine {
 
             speed:
               this.clock.speed,
+
+            tick:
+              this.tick,
           },
         }
       )
@@ -757,6 +682,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * POSSESSO INIZIALE
+   * =========================================================
+   */
   initializePossession() {
     const homePlayers =
       this.getActivePlayers(
@@ -826,6 +756,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * PALLA CONTESA
+   * =========================================================
+   */
   resolveContestedBall() {
     const allPlayers = [
       ...this.getActivePlayers(
@@ -921,6 +856,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * UTILITY AI
+   * =========================================================
+   */
   calculateDecisions() {
     const homePlayers =
       this.getActivePlayers(
@@ -970,9 +910,9 @@ export class MatchEngine {
             .away.team,
       });
 
+
     /**
-     * Applichiamo i target
-     * restituiti dalla Utility AI.
+     * Applichiamo le decisioni.
      */
     this.applyAIDecisions(
       homeDecisions,
@@ -984,8 +924,13 @@ export class MatchEngine {
       awayPlayers
     );
 
+
+    /**
+     * DEBUG AI
+     */
     this.state.debug =
-      this.state.debug ?? {};
+      this.state.debug ??
+      {};
 
     this.state.debug.ai = {
       home:
@@ -1001,16 +946,19 @@ export class MatchEngine {
 
 
   /**
-   * Trasforma le decisioni AI
-   * in target di movimento.
+   * =========================================================
+   * APPLICA DECISIONI AI
+   * =========================================================
    */
   applyAIDecisions(
     decisions,
     players
   ) {
-    if (!Array.isArray(
-      decisions
-    )) {
+    if (
+      !Array.isArray(
+        decisions
+      )
+    ) {
       return;
     }
 
@@ -1029,9 +977,9 @@ export class MatchEngine {
         continue;
       }
 
+
       /**
-       * L'AI può proporre
-       * un target.
+       * Target deciso dalla AI.
        */
       if (
         decision.targetPosition &&
@@ -1067,6 +1015,7 @@ export class MatchEngine {
         };
       }
 
+
       /**
        * Debug runtime.
        */
@@ -1082,6 +1031,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * SPATIAL STATE
+   * =========================================================
+   */
   updateSpatialState() {
     const homePlayers =
       this.getActivePlayers(
@@ -1108,6 +1062,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * GIOCATORI ATTIVI
+   * =========================================================
+   */
   getActivePlayers(team) {
     if (!team) {
       return [];
@@ -1144,6 +1103,10 @@ export class MatchEngine {
         )
         .filter(Boolean);
 
+
+    /**
+     * Garantiamo runtime state.
+     */
     for (
       const player
       of players
@@ -1168,12 +1131,26 @@ export class MatchEngine {
             player.position.y,
         };
       }
+
+      if (
+        !player.velocity
+      ) {
+        player.velocity = {
+          x: 0,
+          y: 0,
+        };
+      }
     }
 
     return players;
   }
 
 
+  /**
+   * =========================================================
+   * INTERVALLO
+   * =========================================================
+   */
   processHalfTime(
     clockEvent
   ) {
@@ -1194,6 +1171,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * FINE PARTITA
+   * =========================================================
+   */
   processFullTime(
     clockEvent
   ) {
@@ -1249,6 +1231,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * CLOCK STATE
+   * =========================================================
+   */
   syncClockState() {
     this.state.clock = {
       ...this.clock.getState(),
@@ -1256,6 +1243,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * RUNTIME STATE
+   * =========================================================
+   */
   syncRuntimeState() {
     this.syncClockState();
 
@@ -1267,6 +1259,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * EVENT CREATION
+   * =========================================================
+   */
   createEvent(
     type,
     {
@@ -1307,19 +1304,38 @@ export class MatchEngine {
           this.eventLog.sequence,
       });
 
+
+    /**
+     * Campi compatibili
+     * con il log UI.
+     */
     event.matchMinute =
       this.clock.minute;
 
     event.matchSecond =
       this.clock.second;
 
+    /**
+     * Tempo simulato,
+     * NON Date.now().
+     *
+     * Questo è fondamentale
+     * per replay e debug
+     * deterministico.
+     */
     event.timestamp =
-      this.clock.totalSimulatedSeconds;
+      this.clock
+        .totalSimulatedSeconds;
 
     return event;
   }
 
 
+  /**
+   * =========================================================
+   * EMIT EVENT
+   * =========================================================
+   */
   emitEvent(event) {
     appendEvent(
       this.eventLog,
@@ -1339,6 +1355,11 @@ export class MatchEngine {
     this.state.lastEvent =
       event;
 
+
+    /**
+     * Notifica UI / renderer /
+     * sistemi esterni.
+     */
     for (
       const listener
       of this.listeners
@@ -1355,6 +1376,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * SUBSCRIBE
+   * =========================================================
+   */
   subscribe(listener) {
     if (
       typeof listener !==
@@ -1377,6 +1403,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * GETTERS
+   * =========================================================
+   */
   getState() {
     return this.state;
   }
@@ -1407,6 +1438,11 @@ export class MatchEngine {
   }
 
 
+  /**
+   * =========================================================
+   * TEAM INSTRUCTION
+   * =========================================================
+   */
   setTeamInstruction(
     side,
     key,
