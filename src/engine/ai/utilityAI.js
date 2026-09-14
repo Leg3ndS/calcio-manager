@@ -1,44 +1,37 @@
 /**
  * UTILITY AI
  *
- * L'Utility AI decide quale comportamento è più utile
- * per ogni giocatore nel contesto corrente.
+ * Decide l'azione più utile per ogni giocatore
+ * nel contesto corrente della partita.
  *
  * IMPORTANTE:
- *
  * Questo modulo DECIDE.
- * Non esegue l'azione.
- *
- * Il Match Engine passa le decisioni al sistema corretto
- * che poi le esegue.
+ * Non esegue direttamente le azioni.
  *
  * Pipeline:
  *
  * WORLD STATE
- *     ↓
+ *      ↓
  * SPATIAL GRID
- *     ↓
+ *      ↓
  * UTILITY AI
- *     ↓
+ *      ↓
  * DECISION
- *     ↓
- * MOVEMENT / POSSESSION / PRESSING
+ *      ↓
+ * POSSESSION / MOVEMENT / PRESSING
  */
-
-
-/* =========================================================
- * COSTANTI
- * ========================================================= */
 
 const ACTIONS = {
   HOLD: "hold",
   MOVE: "move",
   PASS: "pass",
   DRIBBLE: "dribble",
+  CARRY: "carry",
+  SHOOT: "shoot",
   SUPPORT: "support",
   PRESS: "press",
+  NONE: "none",
 };
-
 
 const DEFAULT_SCORE = 0;
 
@@ -47,7 +40,11 @@ const DEFAULT_SCORE = 0;
  * UTILITY
  * ========================================================= */
 
-function clamp(value, min, max) {
+function clamp(value, min = 0, max = 1) {
+  if (!Number.isFinite(value)) {
+    return min;
+  }
+
   return Math.max(
     min,
     Math.min(max, value)
@@ -56,11 +53,7 @@ function clamp(value, min, max) {
 
 
 function clamp01(value) {
-  return clamp(
-    value,
-    0,
-    1
-  );
+  return clamp(value, 0, 1);
 }
 
 
@@ -70,10 +63,12 @@ function distance(a, b) {
   }
 
   const dx =
-    a.x - b.x;
+    (a.x ?? 0) -
+    (b.x ?? 0);
 
   const dy =
-    a.y - b.y;
+    (a.y ?? 0) -
+    (b.y ?? 0);
 
   return Math.sqrt(
     dx * dx +
@@ -91,17 +86,15 @@ function getAttribute(
     player?.attributes?.[name] ??
     player?.[name];
 
-  if (
-    Number.isFinite(value)
-  ) {
+  if (Number.isFinite(value)) {
     return clamp(
-      value,
-      1,
-      99
+      value / 99,
+      0.01,
+      1
     );
   }
 
-  return fallback;
+  return fallback / 99;
 }
 
 
@@ -109,29 +102,20 @@ function averageAttributes(
   player,
   attributes
 ) {
-  if (
-    !attributes?.length
-  ) {
-    return 50;
+  if (!attributes?.length) {
+    return 50 / 99;
   }
 
   let total = 0;
 
-  for (
-    const attribute
-    of attributes
-  ) {
-    total +=
-      getAttribute(
-        player,
-        attribute
-      );
+  for (const attribute of attributes) {
+    total += getAttribute(
+      player,
+      attribute
+    );
   }
 
-  return (
-    total /
-    attributes.length
-  );
+  return total / attributes.length;
 }
 
 
@@ -149,310 +133,370 @@ function getRole(player) {
 }
 
 
-/**
- * Restituisce un profilo comportamentale del ruolo.
- *
- * Non calcoliamo l'OVR qui.
- * Il ruolo serve esclusivamente a orientare
- * la scelta dell'azione.
- */
 function getRoleProfile(role) {
   const profiles = {
+
     Portiere: {
-      attack: 0.05,
-      support: 0.20,
-      pass: 0.50,
-      dribble: 0.05,
+      attack: 0.02,
+      support: 0.15,
+      pass: 0.55,
+      dribble: 0.02,
+      carry: 0.02,
+      shoot: 0.01,
+      press: 0.02,
+      hold: 0.65,
+    },
+
+    "Portiere libero": {
+      attack: 0.08,
+      support: 0.30,
+      pass: 0.75,
+      dribble: 0.08,
+      carry: 0.08,
+      shoot: 0.01,
       press: 0.05,
       hold: 0.40,
     },
 
-    "Portiere libero": {
-      attack: 0.15,
-      support: 0.35,
-      pass: 0.60,
-      dribble: 0.10,
-      press: 0.10,
-      hold: 0.30,
-    },
-
     "Difensore centrale": {
-      attack: 0.15,
+      attack: 0.08,
       support: 0.25,
       pass: 0.55,
-      dribble: 0.10,
+      dribble: 0.08,
+      carry: 0.08,
+      shoot: 0.01,
       press: 0.25,
-      hold: 0.40,
+      hold: 0.45,
     },
 
     "Difensore centrale con impostazione": {
-      attack: 0.20,
+      attack: 0.12,
       support: 0.35,
-      pass: 0.75,
-      dribble: 0.15,
+      pass: 0.78,
+      dribble: 0.12,
+      carry: 0.12,
+      shoot: 0.02,
       press: 0.20,
       hold: 0.35,
     },
 
     "Difensore centrale largo": {
-      attack: 0.20,
+      attack: 0.15,
       support: 0.45,
-      pass: 0.55,
-      dribble: 0.20,
+      pass: 0.60,
+      dribble: 0.18,
+      carry: 0.15,
+      shoot: 0.02,
       press: 0.30,
-      hold: 0.35,
+      hold: 0.30,
     },
 
     "Difensore arcigno": {
-      attack: 0.05,
-      support: 0.10,
-      pass: 0.25,
-      dribble: 0.03,
-      press: 0.55,
-      hold: 0.55,
+      attack: 0.03,
+      support: 0.12,
+      pass: 0.30,
+      dribble: 0.02,
+      carry: 0.02,
+      shoot: 0.005,
+      press: 0.65,
+      hold: 0.60,
     },
 
     Terzino: {
-      attack: 0.30,
-      support: 0.50,
-      pass: 0.50,
+      attack: 0.25,
+      support: 0.55,
+      pass: 0.55,
       dribble: 0.25,
+      carry: 0.22,
+      shoot: 0.04,
       press: 0.50,
       hold: 0.25,
     },
 
     "Terzino di spinta": {
-      attack: 0.55,
-      support: 0.70,
-      pass: 0.55,
-      dribble: 0.40,
-      press: 0.50,
+      attack: 0.48,
+      support: 0.72,
+      pass: 0.58,
+      dribble: 0.42,
+      carry: 0.40,
+      shoot: 0.08,
+      press: 0.52,
       hold: 0.15,
     },
 
     "Terzino offensivo": {
-      attack: 0.70,
+      attack: 0.68,
       support: 0.80,
-      pass: 0.55,
-      dribble: 0.50,
-      press: 0.40,
-      hold: 0.10,
+      pass: 0.58,
+      dribble: 0.52,
+      carry: 0.48,
+      shoot: 0.12,
+      press: 0.45,
+      hold: 0.08,
     },
 
     "Esterno basso": {
-      attack: 0.25,
-      support: 0.55,
-      pass: 0.55,
+      attack: 0.22,
+      support: 0.58,
+      pass: 0.62,
       dribble: 0.20,
-      press: 0.55,
-      hold: 0.25,
+      carry: 0.18,
+      shoot: 0.03,
+      press: 0.58,
+      hold: 0.28,
     },
 
     "Esterno a tutta fascia": {
-      attack: 0.65,
-      support: 0.80,
-      pass: 0.50,
-      dribble: 0.50,
-      press: 0.65,
-      hold: 0.10,
+      attack: 0.62,
+      support: 0.82,
+      pass: 0.55,
+      dribble: 0.52,
+      carry: 0.48,
+      shoot: 0.10,
+      press: 0.68,
+      hold: 0.08,
     },
 
     "Terzino invertito": {
       attack: 0.35,
-      support: 0.60,
-      pass: 0.70,
-      dribble: 0.20,
-      press: 0.40,
+      support: 0.65,
+      pass: 0.75,
+      dribble: 0.22,
+      carry: 0.20,
+      shoot: 0.04,
+      press: 0.42,
       hold: 0.25,
     },
 
     "Esterno invertito": {
-      attack: 0.50,
-      support: 0.70,
-      pass: 0.65,
-      dribble: 0.35,
-      press: 0.45,
-      hold: 0.15,
+      attack: 0.52,
+      support: 0.72,
+      pass: 0.70,
+      dribble: 0.38,
+      carry: 0.35,
+      shoot: 0.08,
+      press: 0.48,
+      hold: 0.12,
     },
 
     Mediano: {
-      attack: 0.20,
-      support: 0.65,
-      pass: 0.75,
-      dribble: 0.15,
-      press: 0.60,
-      hold: 0.30,
+      attack: 0.16,
+      support: 0.68,
+      pass: 0.78,
+      dribble: 0.12,
+      carry: 0.14,
+      shoot: 0.025,
+      press: 0.62,
+      hold: 0.35,
     },
 
     "Mediano d'attesa": {
-      attack: 0.10,
-      support: 0.60,
-      pass: 0.75,
+      attack: 0.08,
+      support: 0.62,
+      pass: 0.78,
       dribble: 0.05,
+      carry: 0.06,
+      shoot: 0.01,
       press: 0.35,
-      hold: 0.55,
+      hold: 0.58,
     },
 
     "Centrocampista difensivo": {
-      attack: 0.15,
-      support: 0.55,
-      pass: 0.65,
+      attack: 0.14,
+      support: 0.60,
+      pass: 0.68,
       dribble: 0.10,
-      press: 0.60,
-      hold: 0.35,
+      carry: 0.12,
+      shoot: 0.025,
+      press: 0.62,
+      hold: 0.40,
     },
 
     "Regista arretrato": {
-      attack: 0.25,
-      support: 0.75,
-      pass: 0.90,
-      dribble: 0.15,
+      attack: 0.18,
+      support: 0.78,
+      pass: 0.92,
+      dribble: 0.14,
+      carry: 0.12,
+      shoot: 0.02,
       press: 0.25,
-      hold: 0.35,
+      hold: 0.38,
     },
 
     Centrocampista: {
-      attack: 0.35,
-      support: 0.65,
-      pass: 0.65,
-      dribble: 0.30,
-      press: 0.50,
-      hold: 0.25,
+      attack: 0.32,
+      support: 0.68,
+      pass: 0.68,
+      dribble: 0.28,
+      carry: 0.28,
+      shoot: 0.08,
+      press: 0.52,
+      hold: 0.24,
     },
 
     "Centrocampista incursore": {
-      attack: 0.70,
-      support: 0.60,
-      pass: 0.55,
-      dribble: 0.40,
-      press: 0.60,
-      hold: 0.10,
+      attack: 0.68,
+      support: 0.62,
+      pass: 0.58,
+      dribble: 0.42,
+      carry: 0.42,
+      shoot: 0.18,
+      press: 0.62,
+      hold: 0.08,
     },
 
     Mezzala: {
-      attack: 0.60,
-      support: 0.75,
-      pass: 0.65,
-      dribble: 0.40,
-      press: 0.55,
-      hold: 0.15,
+      attack: 0.58,
+      support: 0.78,
+      pass: 0.66,
+      dribble: 0.42,
+      carry: 0.42,
+      shoot: 0.16,
+      press: 0.58,
+      hold: 0.12,
     },
 
     Regista: {
-      attack: 0.35,
-      support: 0.80,
-      pass: 0.90,
+      attack: 0.30,
+      support: 0.82,
+      pass: 0.94,
       dribble: 0.20,
+      carry: 0.18,
+      shoot: 0.06,
       press: 0.30,
       hold: 0.30,
     },
 
     Rifinitore: {
       attack: 0.70,
-      support: 0.80,
-      pass: 0.85,
-      dribble: 0.55,
-      press: 0.25,
-      hold: 0.10,
+      support: 0.78,
+      pass: 0.86,
+      dribble: 0.58,
+      carry: 0.48,
+      shoot: 0.28,
+      press: 0.28,
+      hold: 0.06,
     },
 
     Trequartista: {
-      attack: 0.80,
-      support: 0.75,
-      pass: 0.80,
-      dribble: 0.60,
-      press: 0.25,
-      hold: 0.05,
+      attack: 0.82,
+      support: 0.72,
+      pass: 0.82,
+      dribble: 0.66,
+      carry: 0.58,
+      shoot: 0.38,
+      press: 0.28,
+      hold: 0.04,
     },
 
     Ala: {
-      attack: 0.75,
-      support: 0.60,
-      pass: 0.60,
-      dribble: 0.75,
-      press: 0.50,
-      hold: 0.10,
+      attack: 0.76,
+      support: 0.58,
+      pass: 0.58,
+      dribble: 0.78,
+      carry: 0.68,
+      shoot: 0.28,
+      press: 0.52,
+      hold: 0.06,
     },
 
     "Ala invertita": {
-      attack: 0.80,
-      support: 0.65,
-      pass: 0.65,
-      dribble: 0.75,
-      press: 0.45,
-      hold: 0.05,
+      attack: 0.84,
+      support: 0.62,
+      pass: 0.64,
+      dribble: 0.78,
+      carry: 0.70,
+      shoot: 0.42,
+      press: 0.46,
+      hold: 0.04,
     },
 
     "Attaccante esterno": {
-      attack: 0.80,
-      support: 0.55,
-      pass: 0.55,
-      dribble: 0.70,
-      press: 0.55,
-      hold: 0.05,
+      attack: 0.84,
+      support: 0.52,
+      pass: 0.54,
+      dribble: 0.74,
+      carry: 0.66,
+      shoot: 0.40,
+      press: 0.58,
+      hold: 0.03,
     },
 
     "Ala interna": {
-      attack: 0.85,
-      support: 0.65,
-      pass: 0.65,
-      dribble: 0.70,
-      press: 0.50,
-      hold: 0.05,
+      attack: 0.88,
+      support: 0.62,
+      pass: 0.64,
+      dribble: 0.72,
+      carry: 0.64,
+      shoot: 0.50,
+      press: 0.52,
+      hold: 0.03,
     },
 
     "Seconda punta": {
-      attack: 0.90,
-      support: 0.55,
-      pass: 0.60,
-      dribble: 0.65,
-      press: 0.60,
-      hold: 0.05,
+      attack: 0.92,
+      support: 0.48,
+      pass: 0.58,
+      dribble: 0.68,
+      carry: 0.60,
+      shoot: 0.58,
+      press: 0.62,
+      hold: 0.02,
     },
 
     "Trequartista avanzato": {
-      attack: 0.90,
-      support: 0.70,
-      pass: 0.80,
-      dribble: 0.65,
-      press: 0.40,
-      hold: 0.05,
+      attack: 0.94,
+      support: 0.65,
+      pass: 0.82,
+      dribble: 0.68,
+      carry: 0.62,
+      shoot: 0.58,
+      press: 0.42,
+      hold: 0.02,
     },
 
     "Attaccante avanzato": {
-      attack: 0.95,
-      support: 0.30,
-      pass: 0.35,
-      dribble: 0.55,
-      press: 0.55,
-      hold: 0.05,
+      attack: 0.98,
+      support: 0.25,
+      pass: 0.34,
+      dribble: 0.58,
+      carry: 0.52,
+      shoot: 0.78,
+      press: 0.58,
+      hold: 0.01,
     },
 
     "Attaccante di pressione": {
-      attack: 0.80,
-      support: 0.30,
-      pass: 0.35,
-      dribble: 0.45,
-      press: 0.95,
-      hold: 0.05,
+      attack: 0.82,
+      support: 0.25,
+      pass: 0.34,
+      dribble: 0.48,
+      carry: 0.42,
+      shoot: 0.55,
+      press: 0.96,
+      hold: 0.01,
     },
 
     "Attaccante boa": {
-      attack: 0.75,
-      support: 0.50,
-      pass: 0.65,
-      dribble: 0.30,
-      press: 0.35,
-      hold: 0.25,
+      attack: 0.78,
+      support: 0.48,
+      pass: 0.68,
+      dribble: 0.32,
+      carry: 0.28,
+      shoot: 0.66,
+      press: 0.38,
+      hold: 0.24,
     },
 
     "Attaccante completo": {
-      attack: 0.95,
-      support: 0.70,
-      pass: 0.70,
-      dribble: 0.65,
-      press: 0.65,
-      hold: 0.05,
+      attack: 0.98,
+      support: 0.68,
+      pass: 0.72,
+      dribble: 0.68,
+      carry: 0.62,
+      shoot: 0.76,
+      press: 0.68,
+      hold: 0.02,
     },
   };
 
@@ -464,17 +508,14 @@ function getRoleProfile(role) {
 
 
 /* =========================================================
- * SPATIAL CONTEXT
+ * SPATIAL GRID
  * ========================================================= */
 
 function getGridCell(
   spatialGrid,
   position
 ) {
-  if (
-    !spatialGrid ||
-    !position
-  ) {
+  if (!spatialGrid || !position) {
     return null;
   }
 
@@ -517,9 +558,7 @@ function calculatePressure(
   opponents,
   spatialGrid
 ) {
-  if (
-    !player?.position
-  ) {
+  if (!player?.position) {
     return 0;
   }
 
@@ -541,13 +580,8 @@ function calculatePressure(
 
   let pressure = 0;
 
-  for (
-    const opponent
-    of opponents ?? []
-  ) {
-    if (
-      !opponent?.position
-    ) {
+  for (const opponent of opponents ?? []) {
+    if (!opponent?.position) {
       continue;
     }
 
@@ -557,28 +591,16 @@ function calculatePressure(
         opponent.position
       );
 
-    if (
-      d < 0.07
-    ) {
-      pressure += 0.45;
-    }
-
-    else if (
-      d < 0.12
-    ) {
-      pressure += 0.25;
-    }
-
-    else if (
-      d < 0.20
-    ) {
-      pressure += 0.10;
+    if (d < 0.055) {
+      pressure += 0.50;
+    } else if (d < 0.09) {
+      pressure += 0.28;
+    } else if (d < 0.15) {
+      pressure += 0.12;
     }
   }
 
-  return clamp01(
-    pressure
-  );
+  return clamp01(pressure);
 }
 
 
@@ -588,9 +610,7 @@ function calculateFreeSpace(
   opponents,
   spatialGrid
 ) {
-  if (
-    !player?.position
-  ) {
+  if (!player?.position) {
     return 0.5;
   }
 
@@ -606,80 +626,54 @@ function calculateFreeSpace(
     )
   ) {
     return clamp01(
-      1 -
-      cell.pressure
+      1 - cell.pressure
     );
   }
 
-  const pressure =
+  return clamp01(
+    1 -
     calculatePressure(
       player,
       opponents,
       spatialGrid
-    );
-
-  return clamp01(
-    1 -
-    pressure
+    )
   );
 }
 
 
 /* =========================================================
- * POSSESSION CONTEXT
+ * POSSESSION
  * ========================================================= */
 
 function isPlayerInPossession(
   player,
   ball
 ) {
-  if (
-    !player
-  ) {
-    return false;
-  }
-
-  if (
-    ball?.ownerId ===
-    player.id
-  ) {
-    return true;
-  }
-
-  if (
-    player.hasBall ===
-    true
-  ) {
-    return true;
-  }
-
-  return false;
+  return (
+    player &&
+    (
+      ball?.ownerId === player.id ||
+      player.hasBall === true
+    )
+  );
 }
 
 
 /* =========================================================
- * FORWARD VALUE
+ * DIREZIONE / PROGRESSIONE
  * ========================================================= */
 
 function getForwardValue(
   player,
-  ball,
   side
 ) {
-  if (
-    !player?.position
-  ) {
+  if (!player?.position) {
     return 0.5;
   }
 
-  /**
-   * Campo normalizzato:
-   *
-   * HOME → attacca verso x = 1
-   * AWAY → attacca verso x = 0
-   */
   if (
-    side === "HOME"
+    side === "HOME" ||
+    side === "home"
   ) {
     return clamp01(
       player.position.x
@@ -687,7 +681,8 @@ function getForwardValue(
   }
 
   if (
-    side === "AWAY"
+    side === "AWAY" ||
+    side === "away"
   ) {
     return clamp01(
       1 -
@@ -711,17 +706,19 @@ function getProgression(
     return 0;
   }
 
-  const delta =
-    side === "HOME"
-      ? receiver.position.x -
-        passer.position.x
-      : passer.position.x -
-        receiver.position.x;
+  if (
+    side === "HOME" ||
+    side === "home"
+  ) {
+    return (
+      receiver.position.x -
+      passer.position.x
+    );
+  }
 
-  return clamp(
-    delta,
-    -0.5,
-    0.5
+  return (
+    passer.position.x -
+    receiver.position.x
   );
 }
 
@@ -738,8 +735,13 @@ function scorePassTarget({
   side,
 }) {
   if (
+    !player?.position ||
     !teammate?.position
   ) {
+    return -Infinity;
+  }
+
+  if (teammate.id === player.id) {
     return -Infinity;
   }
 
@@ -749,17 +751,11 @@ function scorePassTarget({
       teammate.position
     );
 
-  if (
-    passDistance <
-    0.025
-  ) {
+  if (passDistance < 0.025) {
     return -Infinity;
   }
 
-  if (
-    passDistance >
-    0.80
-  ) {
+  if (passDistance > 0.80) {
     return -Infinity;
   }
 
@@ -771,8 +767,7 @@ function scorePassTarget({
     );
 
   const space =
-    1 -
-    pressure;
+    1 - pressure;
 
   const progression =
     getProgression(
@@ -781,29 +776,34 @@ function scorePassTarget({
       side
     );
 
+  const progressionScore =
+    clamp01(
+      progression * 3 + 0.5
+    );
+
   const receiverVision =
     getAttribute(
       teammate,
       "visione"
-    ) / 99;
+    );
 
   const receiverControl =
     getAttribute(
       teammate,
       "primoControllo"
-    ) / 99;
+    );
 
   const passing =
     getAttribute(
       player,
       "passaggi"
-    ) / 99;
+    );
 
-  const decisionMaking =
+  const decisions =
     getAttribute(
       player,
       "decisioni"
-    ) / 99;
+    );
 
   const distanceScore =
     1 -
@@ -812,40 +812,14 @@ function scorePassTarget({
       0.80
     );
 
-  /**
-   * Target score.
-   *
-   * Un buon passaggio deve:
-   *
-   * - essere raggiungibile;
-   * - trovare spazio;
-   * - produrre avanzamento;
-   * - essere coerente con la qualità del passatore;
-   * - avere un ricevente capace di controllare.
-   */
-  return (
-    distanceScore *
-      0.15 +
-
-    space *
-      0.25 +
-
-    clamp01(
-      progression + 0.5
-    ) *
-      0.25 +
-
-    receiverVision *
-      0.10 +
-
-    receiverControl *
-      0.05 +
-
-    passing *
-      0.10 +
-
-    decisionMaking *
-      0.10
+  return clamp(
+    distanceScore * 0.12 +
+    space * 0.25 +
+    progressionScore * 0.27 +
+    receiverVision * 0.10 +
+    receiverControl * 0.06 +
+    passing * 0.10 +
+    decisions * 0.10
   );
 }
 
@@ -857,45 +831,25 @@ function findBestPassTarget({
   spatialGrid,
   side,
 }) {
-  let best =
-    null;
-
-  let bestScore =
-    -Infinity;
+  let best = null;
+  let bestScore = -Infinity;
 
   for (
     const teammate
     of teammates ?? []
   ) {
-    if (
-      teammate.id ===
-      player.id
-    ) {
-      continue;
-    }
-
     const score =
       scorePassTarget({
         player,
-
         teammate,
-
         opponents,
-
         spatialGrid,
-
         side,
       });
 
-    if (
-      score >
-      bestScore
-    ) {
-      bestScore =
-        score;
-
-      best =
-        teammate;
+    if (score > bestScore) {
+      bestScore = score;
+      best = teammate;
     }
   }
 
@@ -904,7 +858,7 @@ function findBestPassTarget({
 
 
 /* =========================================================
- * TACTICAL INSTRUCTIONS
+ * TATTICHE
  * ========================================================= */
 
 function getInstruction(
@@ -912,17 +866,8 @@ function getInstruction(
   key,
   fallback = null
 ) {
-  if (
-    !instructions
-  ) {
-    return fallback;
-  }
-
-  const value =
-    instructions[key];
-
   return (
-    value ??
+    instructions?.[key] ??
     fallback
   );
 }
@@ -944,14 +889,11 @@ function getMentalityModifier(
     prudente: -0.08,
     equilibrata: 0,
     positiva: 0.08,
-    offensiva: 0.15,
-    moltoOffensiva: 0.25,
+    offensiva: 0.16,
+    moltoOffensiva: 0.24,
   };
 
-  return (
-    values[mentality] ??
-    0
-  );
+  return values[mentality] ?? 0;
 }
 
 
@@ -973,10 +915,7 @@ function getTempoModifier(
     moltoVeloce: 0.10,
   };
 
-  return (
-    values[tempo] ??
-    0
-  );
+  return values[tempo] ?? 0;
 }
 
 
@@ -999,10 +938,7 @@ function getPressingModifier(
     moltoAlto: 0.30,
   };
 
-  return (
-    values[pressing] ??
-    0
-  );
+  return values[pressing] ?? 0;
 }
 
 
@@ -1020,31 +956,24 @@ function scoreHold({
     getAttribute(
       player,
       "freddezza"
-    ) / 99;
+    );
 
   const decisions =
     getAttribute(
       player,
       "decisioni"
-    ) / 99;
+    );
 
   return clamp(
-    0.15 +
-      roleProfile.hold *
-        0.25 +
-      composure *
-        0.20 +
-      decisions *
-        0.15 -
-      pressure *
-        0.10 +
-      Math.max(
-        0,
-        -mentalityModifier
-      ) *
-        0.20,
-    0,
-    1
+    0.08 +
+    roleProfile.hold * 0.32 +
+    composure * 0.20 +
+    decisions * 0.18 -
+    pressure * 0.14 -
+    Math.max(
+      0,
+      mentalityModifier
+    ) * 0.15
   );
 }
 
@@ -1059,36 +988,28 @@ function scoreMove({
     getAttribute(
       player,
       "movimentoSenzaPalla"
-    ) / 99;
+    );
 
   const acceleration =
     getAttribute(
       player,
       "accelerazione"
-    ) / 99;
+    );
 
   const agility =
     getAttribute(
       player,
       "agilita"
-    ) / 99;
+    );
 
   return clamp(
-    0.15 +
-      roleProfile.support *
-        0.20 +
-      freeSpace *
-        0.20 +
-      movement *
-        0.25 +
-      acceleration *
-        0.10 +
-      agility *
-        0.10 +
-      mentalityModifier *
-        0.15,
-    0,
-    1
+    0.10 +
+    roleProfile.support * 0.22 +
+    freeSpace * 0.20 +
+    movement * 0.28 +
+    acceleration * 0.10 +
+    agility * 0.08 +
+    mentalityModifier * 0.12
   );
 }
 
@@ -1102,29 +1023,26 @@ function scoreSupport({
   const teamwork =
     getAttribute(
       player,
+      "giocodellaSquadra"
+    ) ||
+    getAttribute(
+      player,
       "giocoDiSquadra"
-    ) / 99;
+    );
 
   const positioning =
     getAttribute(
       player,
       "posizionamento"
-    ) / 99;
+    );
 
   return clamp(
-    0.15 +
-      roleProfile.support *
-        0.25 +
-      freeSpace *
-        0.20 +
-      teamwork *
-        0.20 +
-      positioning *
-        0.15 +
-      forwardValue *
-        0.05,
-    0,
-    1
+    0.08 +
+    roleProfile.support * 0.28 +
+    freeSpace * 0.18 +
+    teamwork * 0.22 +
+    positioning * 0.18 +
+    forwardValue * 0.06
   );
 }
 
@@ -1140,58 +1058,97 @@ function scoreDribble({
     getAttribute(
       player,
       "dribbling"
-    ) / 99;
+    );
 
   const technique =
     getAttribute(
       player,
       "tecnica"
-    ) / 99;
+    );
 
   const acceleration =
     getAttribute(
       player,
       "accelerazione"
-    ) / 99;
+    );
 
   const agility =
     getAttribute(
       player,
       "agilita"
-    ) / 99;
+    );
 
   const decisions =
     getAttribute(
       player,
       "decisioni"
-    ) / 99;
+    );
 
-  /**
-   * Dribbling sotto pressione
-   * diventa molto più difficile.
-   */
   return clamp(
-    0.05 +
-      roleProfile.dribble *
-        0.25 +
-      dribbling *
-        0.30 +
-      technique *
-        0.15 +
-      acceleration *
-        0.10 +
-      agility *
-        0.10 +
-      decisions *
-        0.10 +
-      freeSpace *
-        0.15 -
-      pressure *
-        0.35 +
-      mentalityModifier *
-        0.10,
-    0,
-    1
+    0.02 +
+    roleProfile.dribble * 0.20 +
+    dribbling * 0.30 +
+    technique * 0.16 +
+    acceleration * 0.08 +
+    agility * 0.10 +
+    decisions * 0.08 +
+    freeSpace * 0.20 -
+    pressure * 0.42 +
+    mentalityModifier * 0.10
+  );
+}
+
+
+function scoreCarry({
+  player,
+  roleProfile,
+  pressure,
+  freeSpace,
+  forwardValue,
+  mentalityModifier,
+}) {
+  const dribbling =
+    getAttribute(
+      player,
+      "dribbling"
+    );
+
+  const acceleration =
+    getAttribute(
+      player,
+      "accelerazione"
+    );
+
+  const speed =
+    getAttribute(
+      player,
+      "velocita"
+    );
+
+  const technique =
+    getAttribute(
+      player,
+      "tecnica"
+    );
+
+  const decisions =
+    getAttribute(
+      player,
+      "decisioni"
+    );
+
+  return clamp(
+    0.015 +
+    roleProfile.carry * 0.20 +
+    dribbling * 0.24 +
+    acceleration * 0.16 +
+    speed * 0.12 +
+    technique * 0.10 +
+    decisions * 0.08 +
+    freeSpace * 0.18 +
+    forwardValue * 0.12 -
+    pressure * 0.35 +
+    mentalityModifier * 0.12
   );
 }
 
@@ -1204,10 +1161,9 @@ function scorePass({
   side,
   mentalityModifier,
   tempoModifier,
+  roleProfile,
 }) {
-  if (
-    !target
-  ) {
+  if (!target) {
     return 0;
   }
 
@@ -1215,25 +1171,25 @@ function scorePass({
     getAttribute(
       player,
       "passaggi"
-    ) / 99;
+    );
 
   const vision =
     getAttribute(
       player,
       "visione"
-    ) / 99;
+    );
 
   const decisions =
     getAttribute(
       player,
       "decisioni"
-    ) / 99;
+    );
 
   const tecnica =
     getAttribute(
       player,
       "tecnica"
-    ) / 99;
+    );
 
   const pressure =
     calculatePressure(
@@ -1250,14 +1206,19 @@ function scorePass({
     );
 
   const space =
-    1 -
-    targetPressure;
+    1 - targetPressure;
 
   const progression =
     getProgression(
       player,
       target,
       side
+    );
+
+  const progressionScore =
+    clamp01(
+      progression * 3 +
+      0.5
     );
 
   const distanceValue =
@@ -1273,264 +1234,190 @@ function scorePass({
       0.80
     );
 
-  /**
-   * Un giocatore con:
-   *
-   * passaggi 99
-   * visione 99
-   * decisioni 99
-   *
-   * deve avere una forte propensione
-   * a trovare e tentare il passaggio.
-   */
   return clamp(
-    0.20 +
-      passaggi *
-        0.25 +
-      vision *
-        0.20 +
-      decisions *
-        0.15 +
-      tecnica *
-        0.10 +
-      space *
-        0.15 +
-      clamp01(
-        progression + 0.5
-      ) *
-        0.10 +
-      distanceScore *
-        0.05 -
-      pressure *
-        0.20 +
-      mentalityModifier *
-        0.15 +
-      tempoModifier *
-        0.10,
-    0,
-    1
+    0.06 +
+    roleProfile.pass * 0.12 +
+    passaggi * 0.25 +
+    vision * 0.18 +
+    decisions * 0.14 +
+    tecnica * 0.08 +
+    space * 0.12 +
+    progressionScore * 0.14 +
+    distanceScore * 0.05 -
+    pressure * 0.12 +
+    tempoModifier * 0.08 +
+    mentalityModifier * 0.08
+  );
+}
+
+
+function scoreShot({
+  player,
+  opponents,
+  roleProfile,
+  forwardValue,
+  pressure,
+  mentalityModifier,
+}) {
+  const finishing =
+    getAttribute(
+      player,
+      "finalizzazione"
+    );
+
+  const shooting =
+    getAttribute(
+      player,
+      "tiro"
+    );
+
+  const longShots =
+    getAttribute(
+      player,
+      "tiriDaLontano"
+    );
+
+  const technique =
+    getAttribute(
+      player,
+      "tecnica"
+    );
+
+  const decisions =
+    getAttribute(
+      player,
+      "decisioni"
+    );
+
+  const composure =
+    getAttribute(
+      player,
+      "freddezza"
+    );
+
+  const position =
+    player?.position ?? {
+      x: 0.5,
+      y: 0.5,
+    };
+
+  /*
+   * HOME attacca verso x=1
+   * AWAY attacca verso x=0
+   */
+  const goalDistance =
+    (
+      player?.side === "away" ||
+      player?.side === "AWAY"
+    )
+      ? position.x
+      : 1 - position.x;
+
+  /*
+   * Zona di tiro:
+   *
+   * < 0.30 = lontano
+   * 0.30-0.55 = final third
+   * > 0.55 = buona zona
+   */
+  const shootingZone =
+    clamp01(
+      (0.68 - goalDistance) /
+      0.50
+    );
+
+  const closeRange =
+    clamp01(
+      (0.48 - goalDistance) /
+      0.35
+    );
+
+  const pressurePenalty =
+    pressure * 0.28;
+
+  /*
+   * I tiri da lontano hanno bisogno
+   * maggiormente di tiri da lontano.
+   */
+  const distanceQuality =
+    goalDistance > 0.40
+      ? longShots
+      : finishing;
+
+  const base =
+    0.005 +
+    roleProfile.shoot * 0.16 +
+    finishing * 0.25 +
+    shooting * 0.18 +
+    technique * 0.08 +
+    decisions * 0.10 +
+    composure * 0.08 +
+    distanceQuality * 0.10 +
+    shootingZone * 0.25 +
+    closeRange * 0.28 -
+    pressurePenalty;
+
+  /*
+   * Un attaccante offensivo deve
+   * cercare maggiormente la conclusione.
+   */
+  const attackingBonus =
+    roleProfile.attack *
+    shootingZone *
+    0.20;
+
+  return clamp(
+    base +
+    attackingBonus +
+    Math.max(
+      0,
+      mentalityModifier
+    ) * 0.20
   );
 }
 
 
 function scorePress({
   player,
-  opponent,
   roleProfile,
-  instructions,
+  pressure,
+  pressingModifier,
 }) {
-  if (
-    !opponent
-  ) {
-    return 0;
-  }
-
-  const aggressiveness =
+  const aggression =
     getAttribute(
       player,
       "aggressivita"
-    ) / 99;
+    );
 
   const anticipation =
     getAttribute(
       player,
       "anticipazione"
-    ) / 99;
+    );
 
-  const acceleration =
+  const workRate =
     getAttribute(
       player,
-      "accelerazione"
-    ) / 99;
-
-  const stamina =
-    getAttribute(
-      player,
-      "resistenza"
-    ) / 99;
-
-  const pressingModifier =
-    getPressingModifier(
-      instructions
+      "impegno"
     );
 
   return clamp(
-    0.10 +
-      roleProfile.press *
-        0.25 +
-      aggressiveness *
-        0.20 +
-      anticipation *
-        0.15 +
-      acceleration *
-        0.10 +
-      stamina *
-        0.10 +
-      pressingModifier *
-        0.40,
-    0,
-    1
+    0.05 +
+    roleProfile.press * 0.35 +
+    aggression * 0.18 +
+    anticipation * 0.15 +
+    workRate * 0.20 +
+    pressingModifier * 0.25 -
+    pressure * 0.05
   );
 }
 
 
 /* =========================================================
- * DECISION TARGET POSITION
+ * WITH BALL
  * ========================================================= */
 
-function getMovementTarget(
-  player,
-  teammates,
-  opponents,
-  ball,
-  side,
-  roleProfile
-) {
-  const current =
-    player.position ??
-    {
-      x: 0.5,
-      y: 0.5,
-    };
-
-  /**
-   * Cerchiamo spazio nella direzione
-   * coerente con il ruolo.
-   */
-  let best =
-    null;
-
-  let bestScore =
-    -Infinity;
-
-  for (
-    const teammate
-    of teammates ?? []
-  ) {
-    if (
-      teammate.id ===
-      player.id
-    ) {
-      continue;
-    }
-
-    if (
-      !teammate.position
-    ) {
-      continue;
-    }
-
-    const d =
-      distance(
-        current,
-        teammate.position
-      );
-
-    if (
-      d < 0.05
-    ) {
-      continue;
-    }
-
-    const pressure =
-      calculatePressure(
-        teammate,
-        opponents,
-        null
-      );
-
-    const progression =
-      getProgression(
-        player,
-        teammate,
-        side
-      );
-
-    const score =
-      (
-        1 -
-        pressure
-      ) *
-        0.45 +
-
-      clamp01(
-        progression + 0.5
-      ) *
-        roleProfile.attack *
-        0.30 +
-
-      (
-        1 -
-        clamp01(
-          d /
-          0.50
-        )
-      ) *
-        0.15;
-
-    if (
-      score >
-      bestScore
-    ) {
-      bestScore =
-        score;
-
-      best =
-        teammate.position;
-    }
-  }
-
-  if (
-    best
-  ) {
-    return {
-      x:
-        clamp01(
-          best.x
-        ),
-
-      y:
-        clamp01(
-          best.y
-        ),
-    };
-  }
-
-  /**
-   * Fallback:
-   * movimento progressivo.
-   */
-  const direction =
-    side === "HOME"
-      ? 1
-      : -1;
-
-  const amount =
-    0.04 +
-    roleProfile.attack *
-      0.05;
-
-  return {
-    x:
-      clamp01(
-        current.x +
-        direction *
-          amount
-      ),
-
-    y:
-      clamp01(
-        current.y
-      ),
-  };
-}
-
-
-/* =========================================================
- * DECISIONE SINGOLO GIOCATORE
- * ========================================================= */
-
-function evaluatePlayer({
+function evaluateWithBall({
   player,
   teammates,
   opponents,
@@ -1540,14 +1427,10 @@ function evaluatePlayer({
   teamInstructions,
 }) {
   const role =
-    getRole(
-      player
-    );
+    getRole(player);
 
   const roleProfile =
-    getRoleProfile(
-      role
-    );
+    getRoleProfile(role);
 
   const pressure =
     calculatePressure(
@@ -1564,13 +1447,6 @@ function evaluatePlayer({
       spatialGrid
     );
 
-  const forwardValue =
-    getForwardValue(
-      player,
-      ball,
-      side
-    );
-
   const mentalityModifier =
     getMentalityModifier(
       teamInstructions
@@ -1581,650 +1457,491 @@ function evaluatePlayer({
       teamInstructions
     );
 
-  const hasBall =
-    isPlayerInPossession(
-      player,
-      ball
-    );
-
-
-  /**
-   * -------------------------------------------------------
-   * SENZA PALLA
-   * -------------------------------------------------------
-   */
-
-  if (
-    !hasBall
-  ) {
-    const moveScore =
-      scoreMove({
-        player,
-
-        roleProfile,
-
-        freeSpace,
-
-        mentalityModifier,
-      });
-
-    const supportScore =
-      scoreSupport({
-        player,
-
-        roleProfile,
-
-        freeSpace,
-
-        forwardValue,
-      });
-
-    /**
-     * Troviamo l'avversario più vicino.
-     */
-    let nearestOpponent =
-      null;
-
-    let nearestDistance =
-      Infinity;
-
-    for (
-      const opponent
-      of opponents ?? []
-    ) {
-      if (
-        !opponent?.position
-      ) {
-        continue;
-      }
-
-      const d =
-        distance(
-          player.position,
-          opponent.position
-        );
-
-      if (
-        d <
-        nearestDistance
-      ) {
-        nearestDistance =
-          d;
-
-        nearestOpponent =
-          opponent;
-      }
-    }
-
-    const pressScore =
-      scorePress({
-        player,
-
-        opponent:
-          nearestOpponent,
-
-        roleProfile,
-
-        instructions:
-          teamInstructions,
-      });
-
-    /**
-     * Se l'avversario è molto vicino,
-     * aumentiamo la pressione.
-     */
-    const contextualPressScore =
-      nearestOpponent &&
-      nearestDistance < 0.18
-        ? pressScore +
-          0.15
-        : pressScore;
-
-    const scores = {
-      [ACTIONS.MOVE]:
-        moveScore,
-
-      [ACTIONS.SUPPORT]:
-        supportScore,
-
-      [ACTIONS.PRESS]:
-        clamp01(
-          contextualPressScore
-        ),
-    };
-
-    const best =
-      selectBestAction(
-        scores
-      );
-
-    let targetPosition =
-      null;
-
-    if (
-      best.action ===
-        ACTIONS.MOVE ||
-      best.action ===
-        ACTIONS.SUPPORT
-    ) {
-      targetPosition =
-        getMovementTarget(
-          player,
-
-          teammates,
-
-          opponents,
-
-          ball,
-
-          side,
-
-          roleProfile
-        );
-    }
-
-    if (
-      best.action ===
-      ACTIONS.PRESS
-    ) {
-      targetPosition =
-        nearestOpponent
-          ?.position
-          ? {
-              x:
-                nearestOpponent
-                  .position.x,
-
-              y:
-                nearestOpponent
-                  .position.y,
-            }
-          : null;
-    }
-
-    return {
-      playerId:
-        player.id,
-
-      action:
-        best.action,
-
-      intent:
-        best.action,
-
-      score:
-        best.score,
-
-      scores,
-
-      targetPosition,
-
-      targetPlayerId:
-        nearestOpponent?.id ??
-        null,
-
-      role,
-
-      hasBall:
-        false,
-
-      pressure,
-
-      freeSpace,
-
-      forwardValue,
-    };
-  }
-
-
-  /**
-   * -------------------------------------------------------
-   * CON PALLA
-   * -------------------------------------------------------
-   */
-
-  const passTarget =
+  const bestTarget =
     findBestPassTarget({
       player,
-
       teammates,
-
       opponents,
-
       spatialGrid,
-
       side,
     });
+
+  const forwardValue =
+    getForwardValue(
+      player,
+      side
+    );
 
   const passScore =
     scorePass({
       player,
-
       target:
-        passTarget,
-
+        bestTarget,
       opponents,
-
       spatialGrid,
-
       side,
-
       mentalityModifier,
-
       tempoModifier,
+      roleProfile,
     });
 
   const dribbleScore =
     scoreDribble({
       player,
-
       roleProfile,
-
       pressure,
-
       freeSpace,
+      mentalityModifier,
+    });
 
+  const carryScore =
+    scoreCarry({
+      player,
+      roleProfile,
+      pressure,
+      freeSpace,
+      forwardValue,
+      mentalityModifier,
+    });
+
+  const shotScore =
+    scoreShot({
+      player,
+      opponents,
+      roleProfile,
+      forwardValue,
+      pressure,
       mentalityModifier,
     });
 
   const holdScore =
     scoreHold({
       player,
-
       roleProfile,
-
       pressure,
-
       mentalityModifier,
     });
 
-
-  /**
-   * Se il giocatore è molto sotto pressione,
-   * il passaggio viene favorito rispetto al dribbling
-   * se esiste un compagno libero.
+  /*
+   * Piccolo correttivo fondamentale:
+   *
+   * se il giocatore è realmente in zona tiro,
+   * il tiro deve competere seriamente con il passaggio.
    */
-  let adjustedPassScore =
+  const position =
+    player?.position ?? {
+      x: 0.5,
+      y: 0.5,
+    };
+
+  const goalDistance =
+    (
+      side === "AWAY" ||
+      side === "away"
+    )
+      ? position.x
+      : 1 - position.x;
+
+  const inShootingZone =
+    goalDistance < 0.62;
+
+  const finalThird =
+    goalDistance < 0.38;
+
+  let adjustedShot =
+    shotScore;
+
+  if (inShootingZone) {
+    adjustedShot +=
+      0.10 +
+      roleProfile.attack * 0.10;
+  }
+
+  if (finalThird) {
+    adjustedShot +=
+      0.12 +
+      roleProfile.attack * 0.12;
+  }
+
+  /*
+   * In area / zona molto avanzata:
+   * il passaggio non deve vincere
+   * automaticamente ogni volta.
+   */
+  let adjustedPass =
     passScore;
 
-  if (
-    passTarget &&
-    pressure > 0.50
-  ) {
-    adjustedPassScore +=
-      0.15;
+  if (finalThird) {
+    adjustedPass -=
+      roleProfile.attack *
+      0.10;
   }
-
-  /**
-   * Se c'è moltissimo spazio davanti,
-   * il dribbling può diventare più interessante.
-   */
-  let adjustedDribbleScore =
-    dribbleScore;
-
-  if (
-    freeSpace > 0.70
-  ) {
-    adjustedDribbleScore +=
-      0.12;
-  }
-
-  /**
-   * Un giocatore molto scarso nei passaggi
-   * non deve essere forzato a passare.
-   */
-  const passingQuality =
-    getAttribute(
-      player,
-      "passaggi"
-    );
-
-  if (
-    passingQuality <
-    25
-  ) {
-    adjustedPassScore *=
-      0.60;
-  }
-
-  /**
-   * Un giocatore molto scarso nel dribbling
-   * deve avere meno probabilità di scegliere
-   * questa soluzione.
-   */
-  const dribblingQuality =
-    getAttribute(
-      player,
-      "dribbling"
-    );
-
-  if (
-    dribblingQuality <
-    25
-  ) {
-    adjustedDribbleScore *=
-      0.55;
-  }
-
 
   const scores = {
     [ACTIONS.PASS]:
-      clamp01(
-        adjustedPassScore
-      ),
+      clamp(adjustedPass),
 
     [ACTIONS.DRIBBLE]:
-      clamp01(
-        adjustedDribbleScore
-      ),
+      clamp(dribbleScore),
+
+    [ACTIONS.CARRY]:
+      clamp(carryScore),
+
+    [ACTIONS.SHOOT]:
+      clamp(adjustedShot),
 
     [ACTIONS.HOLD]:
-      clamp01(
-        holdScore
-      ),
+      clamp(holdScore),
   };
 
-
-  /**
-   * Mentalità offensiva:
-   * aumenta leggermente dribbling/passaggi verticali.
-   */
-  if (
-    mentalityModifier >
-    0
-  ) {
-    scores[ACTIONS.DRIBBLE] =
-      clamp01(
-        scores[ACTIONS.DRIBBLE] +
-        mentalityModifier *
-          0.20
-      );
-
-    scores[ACTIONS.PASS] =
-      clamp01(
-        scores[ACTIONS.PASS] +
-        mentalityModifier *
-          0.15
-      );
-  }
-
-
-  /**
-   * Mentalità difensiva:
-   * privilegia conservazione del possesso.
-   */
-  if (
-    mentalityModifier <
-    0
-  ) {
-    scores[ACTIONS.HOLD] =
-      clamp01(
-        scores[ACTIONS.HOLD] +
-        Math.abs(
-          mentalityModifier
-        ) *
-          0.20
-      );
-  }
-
-
-  const best =
-    selectBestAction(
-      scores
-    );
-
-
-  /**
-   * Evitiamo passaggi senza target.
-   */
-  if (
-    best.action ===
-      ACTIONS.PASS &&
-    !passTarget
-  ) {
-    scores[ACTIONS.PASS] =
-      0;
-
-    const fallback =
-      selectBestAction(
-        scores
-      );
-
-    return {
-      playerId:
-        player.id,
-
-      action:
-        fallback.action,
-
-      intent:
-        fallback.action,
-
-      score:
-        fallback.score,
-
-      scores,
-
-      targetPosition:
-        fallback.action ===
-        ACTIONS.DRIBBLE
-          ? {
-              x:
-                clamp01(
-                  player.position.x +
-                  (
-                    side ===
-                    "HOME"
-                      ? 0.08
-                      : -0.08
-                  )
-                ),
-
-              y:
-                player.position.y,
-            }
-          : null,
-
-      targetPlayerId:
-        null,
-
-      role,
-
-      hasBall:
-        true,
-
-      pressure,
-
-      freeSpace,
-
-      forwardValue,
-    };
-  }
-
-
-  return {
-    playerId:
-      player.id,
-
-    action:
-      best.action,
-
-    intent:
-      best.action,
-
-    score:
-      best.score,
-
-    scores,
-
-    targetPosition:
-      best.action ===
-      ACTIONS.PASS
-        ? passTarget?.position
-          ? {
-              x:
-                passTarget.position.x,
-
-              y:
-                passTarget.position.y,
-            }
-          : null
-        : best.action ===
-          ACTIONS.DRIBBLE
-          ? {
-              x:
-                clamp01(
-                  player.position.x +
-                  (
-                    side ===
-                    "HOME"
-                      ? 0.08
-                      : -0.08
-                  )
-                ),
-
-              y:
-                player.position.y,
-            }
-          : null,
-
-    targetPlayerId:
-      best.action ===
-      ACTIONS.PASS
-        ? passTarget?.id ??
-          null
-        : null,
-
-    role,
-
-    hasBall:
-      true,
-
-    pressure,
-
-    freeSpace,
-
-    forwardValue,
-  };
-}
-
-
-/* =========================================================
- * SELEZIONE AZIONE
- * ========================================================= */
-
-function selectBestAction(
-  scores
-) {
-  let bestAction =
+  let action =
     ACTIONS.HOLD;
 
   let bestScore =
     DEFAULT_SCORE;
 
   for (
-    const [
-      action,
-      score
-    ]
-    of Object.entries(
-      scores
-    )
+    const [candidate, score]
+    of Object.entries(scores)
   ) {
-    if (
-      score >
-      bestScore
-    ) {
-      bestScore =
-        score;
-
-      bestAction =
-        action;
+    if (score > bestScore) {
+      bestScore = score;
+      action = candidate;
     }
   }
 
   return {
-    action:
-      bestAction,
+    playerId:
+      player.id,
+
+    side,
+
+    role,
+
+    roleProfile,
+
+    action,
 
     score:
       bestScore,
+
+    scores,
+
+    targetPlayerId:
+      action === ACTIONS.PASS
+        ? bestTarget?.id ?? null
+        : null,
+
+    targetPosition:
+      bestTarget?.position
+        ? {
+            x:
+              bestTarget.position.x,
+            y:
+              bestTarget.position.y,
+          }
+        : null,
+
+    pressure,
+
+    freeSpace,
+
+    forwardValue,
+
+    goalDistance,
+
+    inShootingZone,
+
+    finalThird,
+
+    possession:
+      true,
+
+    intent:
+      action,
+
+    reason:
+      action === ACTIONS.SHOOT
+        ? "shooting_opportunity"
+        : action === ACTIONS.PASS
+          ? "best_pass_option"
+          : action === ACTIONS.CARRY
+            ? "space_to_progress"
+            : action === ACTIONS.DRIBBLE
+              ? "dribble_opportunity"
+              : "retain_possession",
   };
 }
 
 
 /* =========================================================
- * EVALUATE TEAM
+ * WITHOUT BALL
  * ========================================================= */
 
-export function evaluateTeam({
-  players = [],
-  opponents = [],
-  ball = null,
-  spatialGrid = null,
-  teamInstructions = {},
+function evaluateWithoutBall({
+  player,
+  teammates,
+  opponents,
+  ball,
+  spatialGrid,
+  side,
+  teamInstructions,
 }) {
-  const team =
-    players ?? [];
+  const role =
+    getRole(player);
 
-  /**
-   * Determiniamo il lato
-   * dalla posizione media / proprietà
-   * del giocatore.
-   *
-   * Il Match Engine usa HOME/AWAY.
-   */
-  const side =
-    determineSide(
-      team
+  const roleProfile =
+    getRoleProfile(role);
+
+  const pressure =
+    calculatePressure(
+      player,
+      opponents,
+      spatialGrid
     );
 
-  const decisions =
-    [];
+  const freeSpace =
+    calculateFreeSpace(
+      player,
+      teammates,
+      opponents,
+      spatialGrid
+    );
+
+  const mentalityModifier =
+    getMentalityModifier(
+      teamInstructions
+    );
+
+  const pressingModifier =
+    getPressingModifier(
+      teamInstructions
+    );
+
+  const forwardValue =
+    getForwardValue(
+      player,
+      side
+    );
+
+  const moveScore =
+    scoreMove({
+      player,
+      roleProfile,
+      freeSpace,
+      mentalityModifier,
+    });
+
+  const supportScore =
+    scoreSupport({
+      player,
+      roleProfile,
+      freeSpace,
+      forwardValue,
+    });
+
+  const pressScore =
+    scorePress({
+      player,
+      roleProfile,
+      pressure,
+      pressingModifier,
+    });
+
+  /*
+   * Se la squadra non ha palla,
+   * il pressing aumenta quando:
+   *
+   * - pressing tattico è alto
+   * - ruolo è adatto
+   * - giocatore è vicino all'avversario
+   */
+  const nearestOpponentDistance =
+    Math.min(
+      ...(opponents ?? []).map(
+        (opponent) =>
+          distance(
+            player.position,
+            opponent.position
+          )
+      ),
+      Infinity
+    );
+
+  let adjustedPress =
+    pressScore;
+
+  if (
+    nearestOpponentDistance <
+    0.18
+  ) {
+    adjustedPress +=
+      0.10;
+  }
+
+  if (
+    nearestOpponentDistance <
+    0.10
+  ) {
+    adjustedPress +=
+      0.12;
+  }
+
+  const scores = {
+    [ACTIONS.MOVE]:
+      clamp(moveScore),
+
+    [ACTIONS.SUPPORT]:
+      clamp(supportScore),
+
+    [ACTIONS.PRESS]:
+      clamp(adjustedPress),
+  };
+
+  let action =
+    ACTIONS.MOVE;
+
+  let bestScore =
+    DEFAULT_SCORE;
+
+  for (
+    const [candidate, score]
+    of Object.entries(scores)
+  ) {
+    if (score > bestScore) {
+      bestScore = score;
+      action = candidate;
+    }
+  }
+
+  return {
+    playerId:
+      player.id,
+
+    side,
+
+    role,
+
+    roleProfile,
+
+    action,
+
+    score:
+      bestScore,
+
+    scores,
+
+    targetPlayerId:
+      null,
+
+    targetPosition:
+      player.targetPosition
+        ? {
+            x:
+              player.targetPosition.x,
+            y:
+              player.targetPosition.y,
+          }
+        : null,
+
+    pressure,
+
+    freeSpace,
+
+    forwardValue,
+
+    possession:
+      false,
+
+    intent:
+      action,
+
+    reason:
+      action === ACTIONS.PRESS
+        ? "press_opponent"
+        : action === ACTIONS.SUPPORT
+          ? "support_possession"
+          : "move_into_space",
+  };
+}
+
+
+/* =========================================================
+ * TEAM EVALUATION
+ * ========================================================= */
+
+function evaluateTeam({
+  players,
+  opponents,
+  ball,
+  spatialGrid,
+  teamInstructions = {},
+  possession,
+}) {
+  const decisions = [];
+
+  const side =
+    players?.[0]?.side ??
+    (
+      possession === "home"
+        ? "home"
+        : possession === "away"
+          ? "away"
+          : "home"
+    );
+
+  const normalizedSide =
+    String(side).toUpperCase();
 
   for (
     const player
-    of team
+    of players ?? []
   ) {
+    if (!player) {
+      continue;
+    }
+
+    /*
+     * Le riserve non partecipano
+     * alla simulazione.
+     */
     if (
-      !player
+      player.onPitch === false ||
+      player.matchState?.onPitch === false
     ) {
       continue;
     }
 
-    if (
-      player.isActive ===
-      false
-    ) {
-      continue;
-    }
-
-    if (
-      player.redCard ===
-      true ||
-      player.redCards ===
-      true
-    ) {
-      continue;
-    }
+    const isPossessing =
+      isPlayerInPossession(
+        player,
+        ball
+      );
 
     const decision =
-      evaluatePlayer({
-        player,
-
-        teammates:
-          team,
-
-        opponents,
-
-        ball,
-
-        spatialGrid,
-
-        side,
-
-        teamInstructions,
-      });
+      isPossessing
+        ? evaluateWithBall({
+            player,
+            teammates:
+              players,
+            opponents,
+            ball,
+            spatialGrid,
+            side:
+              normalizedSide,
+            teamInstructions,
+          })
+        : evaluateWithoutBall({
+            player,
+            teammates:
+              players,
+            opponents,
+            ball,
+            spatialGrid,
+            side:
+              normalizedSide,
+            teamInstructions,
+          });
 
     decisions.push(
       decision
@@ -2236,143 +1953,70 @@ export function evaluateTeam({
 
 
 /* =========================================================
- * SIDE
+ * DEBUG
  * ========================================================= */
 
-function determineSide(
-  players
-) {
-  /**
-   * Se almeno un giocatore espone
-   * esplicitamente teamSide/side,
-   * utilizziamolo.
-   */
-  for (
-    const player
-    of players ?? []
-  ) {
-    if (
-      player?.teamSide ===
-      "HOME" ||
-      player?.teamSide ===
-      "AWAY"
-    ) {
-      return player.teamSide;
-    }
+function evaluateTeamDebug({
+  players,
+  opponents,
+  ball,
+  spatialGrid,
+  teamInstructions = {},
+  possession,
+}) {
+  return evaluateTeam({
+    players,
+    opponents,
+    ball,
+    spatialGrid,
+    teamInstructions,
+    possession,
+  }).map(
+    (decision) => ({
+      ...decision,
 
-    if (
-      player?.side ===
-      "HOME" ||
-      player?.side ===
-      "AWAY"
-    ) {
-      return player.side;
-    }
-  }
+      debug: {
+        playerId:
+          decision.playerId,
 
-  /**
-   * Fallback basato sulla posizione media.
-   *
-   * La squadra che si trova prevalentemente
-   * nella metà sinistra viene considerata HOME.
-   */
-  const positioned =
-    (
-      players ?? []
-    ).filter(
-      (player) =>
-        Number.isFinite(
-          player?.position?.x
-        )
-    );
+        role:
+          decision.role,
 
-  if (
-    !positioned.length
-  ) {
-    return "HOME";
-  }
+        action:
+          decision.action,
 
-  const average =
-    positioned.reduce(
-      (
-        total,
-        player
-      ) =>
-        total +
-        player.position.x,
-      0
-    ) /
-    positioned.length;
+        score:
+          decision.score,
 
-  return average <
-    0.5
-    ? "HOME"
-    : "AWAY";
-}
+        scores:
+          decision.scores,
 
+        pressure:
+          decision.pressure,
 
-/* =========================================================
- * TEAM DEBUG
- * ========================================================= */
+        freeSpace:
+          decision.freeSpace,
 
-export function evaluateTeamDebug(
-  options
-) {
-  const decisions =
-    evaluateTeam(
-      options
-    );
+        forwardValue:
+          decision.forwardValue,
 
-  return {
-    decisions,
+        goalDistance:
+          decision.goalDistance ??
+          null,
 
-    summary: {
-      players:
-        decisions.length,
+        inShootingZone:
+          decision.inShootingZone ??
+          false,
 
-      pass:
-        decisions.filter(
-          (decision) =>
-            decision.action ===
-            ACTIONS.PASS
-        ).length,
+        finalThird:
+          decision.finalThird ??
+          false,
 
-      move:
-        decisions.filter(
-          (decision) =>
-            decision.action ===
-            ACTIONS.MOVE
-        ).length,
-
-      dribble:
-        decisions.filter(
-          (decision) =>
-            decision.action ===
-            ACTIONS.DRIBBLE
-        ).length,
-
-      support:
-        decisions.filter(
-          (decision) =>
-            decision.action ===
-            ACTIONS.SUPPORT
-        ).length,
-
-      press:
-        decisions.filter(
-          (decision) =>
-            decision.action ===
-            ACTIONS.PRESS
-        ).length,
-
-      hold:
-        decisions.filter(
-          (decision) =>
-            decision.action ===
-            ACTIONS.HOLD
-        ).length,
-    },
-  };
+        reason:
+          decision.reason,
+      },
+    })
+  );
 }
 
 
@@ -2382,14 +2026,22 @@ export function evaluateTeamDebug(
 
 export {
   ACTIONS,
-
+  evaluateTeam,
+  evaluateTeamDebug,
   getRole,
-
   getRoleProfile,
-
   calculatePressure,
-
   calculateFreeSpace,
+  findBestPassTarget,
+};
 
+export default {
+  ACTIONS,
+  evaluateTeam,
+  evaluateTeamDebug,
+  getRole,
+  getRoleProfile,
+  calculatePressure,
+  calculateFreeSpace,
   findBestPassTarget,
 };
