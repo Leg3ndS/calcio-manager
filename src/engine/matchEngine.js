@@ -74,16 +74,28 @@ export class MatchEngine {
       );
     }
 
+    /**
+     * Seed deterministico.
+     */
     this.seed =
       seed ??
       createMatchSeed();
 
+    /**
+     * RNG della partita.
+     */
     this.rng =
       new RNG(this.seed);
 
+    /**
+     * Clock.
+     */
     this.clock =
       new MatchClock();
 
+    /**
+     * World State.
+     */
     this.state =
       createMatchState({
         homeTeam,
@@ -91,12 +103,25 @@ export class MatchEngine {
         seed: this.seed,
       });
 
+    /**
+     * Event log.
+     */
     this.eventLog =
       createEventLog();
 
+    /**
+     * Spatial grid.
+     */
     this.spatialGrid =
       createSpatialGrid();
 
+    /**
+     * Istruzioni tattiche runtime.
+     *
+     * Sono separate dall'identità
+     * della squadra e potranno essere
+     * modificate durante la partita.
+     */
     this.tacticalInstructions = {
       home:
         createTacticalInstructions({
@@ -111,17 +136,151 @@ export class MatchEngine {
         }),
     };
 
+    /**
+     * Runtime.
+     */
     this.running = false;
 
     this.listeners =
       new Set();
 
+    /**
+     * Tick della simulazione.
+     */
     this.tick = 0;
 
+    /**
+     * Prepariamo i giocatori
+     * prima che qualsiasi sistema
+     * li utilizzi.
+     */
+    this.prepareRuntimePlayers(
+      homeTeam
+    );
+
+    this.prepareRuntimePlayers(
+      awayTeam
+    );
+
+    /**
+     * Sincronizzazione iniziale.
+     */
     this.syncRuntimeState();
   }
 
 
+  /**
+   * Prepara lo stato runtime
+   * dei giocatori.
+   *
+   * Il Player Model può conservare
+   * la posizione in currentState.position.
+   *
+   * Il Match Engine espone invece
+   * una posizione runtime uniforme:
+   *
+   * player.position.x
+   * player.position.y
+   */
+  prepareRuntimePlayers(team) {
+    if (!team?.players) {
+      return;
+    }
+
+    for (
+      const player
+      of team.players
+    ) {
+      if (!player) {
+        continue;
+      }
+
+      /**
+       * Caso 1:
+       * la posizione runtime esiste già.
+       */
+      if (
+        player.position &&
+        Number.isFinite(
+          player.position.x
+        ) &&
+        Number.isFinite(
+          player.position.y
+        )
+      ) {
+        if (
+          !player.targetPosition
+        ) {
+          player.targetPosition = {
+            x:
+              player.position.x,
+
+            y:
+              player.position.y,
+          };
+        }
+
+        continue;
+      }
+
+      /**
+       * Caso 2:
+       * posizione dentro currentState.
+       */
+      const runtimePosition =
+        player.currentState?.position;
+
+      if (
+        runtimePosition &&
+        Number.isFinite(
+          runtimePosition.x
+        ) &&
+        Number.isFinite(
+          runtimePosition.y
+        )
+      ) {
+        player.position = {
+          x:
+            runtimePosition.x,
+
+          y:
+            runtimePosition.y,
+        };
+
+        player.targetPosition = {
+          x:
+            runtimePosition.x,
+
+          y:
+            runtimePosition.y,
+        };
+
+        continue;
+      }
+
+      /**
+       * Caso 3:
+       * il Player Model non ha ancora
+       * una posizione.
+       *
+       * Usiamo un fallback sicuro.
+       */
+      player.position = {
+        x: 0.5,
+        y: 0.5,
+      };
+
+      player.targetPosition = {
+        x: 0.5,
+        y: 0.5,
+      };
+    }
+  }
+
+
+  /**
+   * Avvia la partita.
+   */
   start() {
     if (this.running) {
       return;
@@ -157,6 +316,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Ferma il motore.
+   */
   stop() {
     this.running = false;
 
@@ -171,6 +333,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Pausa la partita.
+   */
   pause() {
     if (
       this.state.matchStatus.finished
@@ -188,6 +353,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Riprende la partita.
+   */
   resume() {
     if (
       this.state.matchStatus.finished
@@ -212,6 +380,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Cambia velocità.
+   */
   setSpeed(speed) {
     this.clock.setSpeed(speed);
 
@@ -219,6 +390,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Aggiornamento principale.
+   */
   update(deltaMs) {
     if (!this.running) {
       return;
@@ -273,11 +447,17 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Processa un singolo tick.
+   */
   processTick(
     clockEvent
   ) {
     this.syncClockState();
 
+    /**
+     * KICKOFF → OPEN_PLAY.
+     */
     if (
       this.state.phase ===
       MATCH_PHASES.KICKOFF
@@ -287,12 +467,12 @@ export class MatchEngine {
     }
 
     /**
-     * Aggiorniamo lo spazio.
+     * Aggiorna lo spazio.
      */
     this.updateSpatialState();
 
     /**
-     * Primo possesso della partita.
+     * Primo possesso.
      */
     if (
       this.state.possession ===
@@ -303,12 +483,7 @@ export class MatchEngine {
     }
 
     /**
-     * Se il possesso è conteso,
-     * per ora cerchiamo il giocatore
-     * più vicino alla palla.
-     *
-     * Il vero sistema di recupero
-     * arriverà dopo.
+     * Risoluzione della palla contesa.
      */
     if (
       this.state.possession ===
@@ -318,18 +493,12 @@ export class MatchEngine {
     }
 
     /**
-     * Utility AI.
-     *
-     * Per ora calcoliamo le decisioni
-     * ma NON le applichiamo tutte.
-     *
-     * Il possessore verrà utilizzato
-     * dal Possession System.
+     * Calcolo Utility AI.
      */
     this.calculateDecisions();
 
     /**
-     * Micro-ciclo di possesso.
+     * Micro-ciclo del possesso.
      */
     if (
       this.state.possession ===
@@ -356,13 +525,14 @@ export class MatchEngine {
     }
 
     /**
-     * Nuova spatial update dopo
-     * eventuali cambi di possesso.
+     * Aggiorniamo nuovamente
+     * la griglia dopo eventuali
+     * cambi di possesso.
      */
     this.updateSpatialState();
 
     /**
-     * Tick dell'engine.
+     * Evento tick.
      */
     this.emitEvent(
       this.createEvent(
@@ -382,7 +552,7 @@ export class MatchEngine {
 
 
   /**
-   * Assegna il primo possesso.
+   * Inizializza il primo possesso.
    */
   initializePossession() {
     const homePlayers =
@@ -443,6 +613,7 @@ export class MatchEngine {
 
           payload: {
             side,
+
             reason:
               "kickoff",
           },
@@ -453,18 +624,7 @@ export class MatchEngine {
 
 
   /**
-   * Risolve provvisoriamente una palla contesa.
-   *
-   * È intenzionalmente semplice.
-   *
-   * Nel prossimo sistema inseriremo:
-   *
-   * - anticipazione
-   * - contrasti
-   * - reattività
-   * - distanza
-   * - velocità
-   * - pressione.
+   * Risolve una palla contesa.
    */
   resolveContestedBall() {
     const allPlayers = [
@@ -519,8 +679,8 @@ export class MatchEngine {
     }
 
     /**
-     * Deve essere sufficientemente
-     * vicino per recuperare la palla.
+     * Distanza massima per
+     * intervenire sulla palla.
      */
     if (
       nearest.distance >
@@ -618,26 +778,27 @@ export class MatchEngine {
       });
 
     /**
-     * Conserviamo le decisioni
-     * nel World State per il Debug Mode.
+     * Debug AI.
      */
     this.state.debug =
       this.state.debug ?? {};
 
-    this.state.debug.ai =
-      {
-        home:
-          homeDecisions,
+    this.state.debug.ai = {
+      home:
+        homeDecisions,
 
-        away:
-          awayDecisions,
+      away:
+        awayDecisions,
 
-        tick:
-          this.tick,
-      };
+      tick:
+        this.tick,
+    };
   }
 
 
+  /**
+   * Aggiorna la spatial grid.
+   */
   updateSpatialState() {
     const homePlayers =
       this.getActivePlayers(
@@ -662,6 +823,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Recupera i titolari attivi.
+   */
   getActivePlayers(team) {
     if (!team) {
       return [];
@@ -670,35 +834,100 @@ export class MatchEngine {
     const startingXI =
       team.startingXI ?? [];
 
-    return startingXI
-      .map(
-        (reference) => {
-          if (
-            typeof reference ===
-            "string"
-          ) {
-            return team.players.find(
-              (player) =>
-                player.id ===
-                reference
-            );
-          }
+    const players =
+      startingXI
+        .map(
+          (reference) => {
+            if (
+              typeof reference ===
+              "string"
+            ) {
+              return team.players.find(
+                (player) =>
+                  player.id ===
+                  reference
+              );
+            }
 
-          if (
-            reference &&
-            typeof reference ===
-              "object"
-          ) {
-            return reference;
-          }
+            if (
+              reference &&
+              typeof reference ===
+                "object"
+            ) {
+              return reference;
+            }
 
-          return null;
+            return null;
+          }
+        )
+        .filter(Boolean);
+
+    /**
+     * Seconda protezione:
+     * qualsiasi giocatore restituito
+     * dal metodo deve avere una
+     * posizione utilizzabile.
+     */
+    for (
+      const player
+      of players
+    ) {
+      if (
+        !player.position ||
+        !Number.isFinite(
+          player.position.x
+        ) ||
+        !Number.isFinite(
+          player.position.y
+        )
+      ) {
+        const runtimePosition =
+          player.currentState?.position;
+
+        if (
+          runtimePosition &&
+          Number.isFinite(
+            runtimePosition.x
+          ) &&
+          Number.isFinite(
+            runtimePosition.y
+          )
+        ) {
+          player.position = {
+            x:
+              runtimePosition.x,
+
+            y:
+              runtimePosition.y,
+          };
+        } else {
+          player.position = {
+            x: 0.5,
+            y: 0.5,
+          };
         }
-      )
-      .filter(Boolean);
+      }
+
+      if (
+        !player.targetPosition
+      ) {
+        player.targetPosition = {
+          x:
+            player.position.x,
+
+          y:
+            player.position.y,
+        };
+      }
+    }
+
+    return players;
   }
 
 
+  /**
+   * Intervallo.
+   */
   processHalfTime(
     clockEvent
   ) {
@@ -719,6 +948,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Fine partita.
+   */
   processFullTime(
     clockEvent
   ) {
@@ -731,6 +963,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Termina la partita.
+   */
   finishMatch(
     clockEvent = null
   ) {
@@ -773,6 +1008,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Sincronizza il clock.
+   */
   syncClockState() {
     this.state.clock = {
       ...this.clock.getState(),
@@ -780,6 +1018,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Sincronizza lo stato runtime.
+   */
   syncRuntimeState() {
     this.syncClockState();
 
@@ -791,6 +1032,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Crea un evento deterministico.
+   */
   createEvent(
     type,
     {
@@ -832,7 +1076,7 @@ export class MatchEngine {
       });
 
     /**
-     * Compatibilità con UI attuale.
+     * Compatibilità con la UI attuale.
      */
     event.matchMinute =
       this.clock.minute;
@@ -841,8 +1085,8 @@ export class MatchEngine {
       this.clock.second;
 
     /**
-     * NON usiamo più Date.now()
-     * per la logica della simulazione.
+     * Tempo della simulazione,
+     * non Date.now().
      */
     event.timestamp =
       this.clock.totalSimulatedSeconds;
@@ -851,6 +1095,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Registra e distribuisce un evento.
+   */
   emitEvent(event) {
     appendEvent(
       this.eventLog,
@@ -886,6 +1133,9 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Subscribe.
+   */
   subscribe(listener) {
     if (
       typeof listener !==
@@ -908,36 +1158,58 @@ export class MatchEngine {
   }
 
 
+  /**
+   * Stato completo.
+   */
   getState() {
     return this.state;
   }
 
 
+  /**
+   * Seed.
+   */
   getSeed() {
     return this.seed;
   }
 
 
+  /**
+   * RNG state.
+   */
   getRNGState() {
     return this.rng.getState();
   }
 
 
+  /**
+   * Clock state.
+   */
   getClockState() {
     return this.clock.getState();
   }
 
 
+  /**
+   * Spatial grid.
+   */
   getSpatialGrid() {
     return this.spatialGrid;
   }
 
 
+  /**
+   * Tactical instructions.
+   */
   getTacticalInstructions() {
     return this.tacticalInstructions;
   }
 
 
+  /**
+   * Modifica un'istruzione tattica
+   * durante la partita.
+   */
   setTeamInstruction(
     side,
     key,
