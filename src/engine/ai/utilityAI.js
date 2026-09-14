@@ -1,6 +1,5 @@
 // ============================================================
-// UTILITY AI
-// Decision making individuale dei giocatori
+// UTILITY AI - CALCIO MANAGER
 // ============================================================
 
 const ACTIONS = Object.freeze({
@@ -16,21 +15,15 @@ const ACTIONS = Object.freeze({
 });
 
 // ============================================================
-// UTILS
+// GENERIC HELPERS
 // ============================================================
 
 function clamp(value, min = 0, max = 1) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function normalizeNumber(value, fallback = 50) {
   const n = Number(value);
 
-  if (!Number.isFinite(n)) {
-    return fallback;
-  }
+  if (!Number.isFinite(n)) return min;
 
-  return clamp(n / 99, 0, 1);
+  return Math.max(min, Math.min(max, n));
 }
 
 function normalizeText(value) {
@@ -43,113 +36,208 @@ function normalizeText(value) {
     .replace(/\s+/g, " ");
 }
 
+function normalizeAttribute(value, fallback = 50) {
+  const n = Number(value);
+
+  if (!Number.isFinite(n)) {
+    return clamp(fallback / 99);
+  }
+
+  return clamp(n / 99);
+}
+
+// ============================================================
+// SAFE ARRAY CONVERSION
+// ============================================================
+
+function toPlayerArray(value) {
+  if (Array.isArray(value)) {
+    return value.filter(Boolean);
+  }
+
+  if (!value || typeof value !== "object") {
+    return [];
+  }
+
+  // Struttura { players: [...] }
+  if (Array.isArray(value.players)) {
+    return value.players.filter(Boolean);
+  }
+
+  // Struttura { homePlayers: [...] }
+  if (Array.isArray(value.homePlayers)) {
+    return value.homePlayers.filter(Boolean);
+  }
+
+  // Struttura { awayPlayers: [...] }
+  if (Array.isArray(value.awayPlayers)) {
+    return value.awayPlayers.filter(Boolean);
+  }
+
+  // Mappa { playerId: playerObject }
+  const values = Object.values(value);
+
+  if (
+    values.length > 0 &&
+    values.every(
+      (item) =>
+        item &&
+        typeof item === "object" &&
+        !Array.isArray(item)
+    )
+  ) {
+    return values.filter(Boolean);
+  }
+
+  return [];
+}
+
 // ============================================================
 // ROLE NORMALIZATION
 // ============================================================
 
 const ROLE_ALIASES = {
-  "portiere": "Portiere",
-  "gk": "Portiere",
-  "goalkeeper": "Portiere",
+  portiere: "Portiere",
+  gk: "Portiere",
+  goalkeeper: "Portiere",
 
   "portiere libero": "Portiere libero",
-  "portiere_libero": "Portiere libero",
+  portiere_libero: "Portiere libero",
 
-  "terzino": "Terzino",
+  terzino: "Terzino",
+
   "terzino di spinta": "Terzino di spinta",
-  "terzino_di_spinta": "Terzino di spinta",
+  terzino_di_spinta: "Terzino di spinta",
 
   "terzino offensivo": "Terzino offensivo",
-  "terzino_offensivo": "Terzino offensivo",
+  terzino_offensivo: "Terzino offensivo",
 
   "esterno basso": "Esterno basso",
-  "esterno_basso": "Esterno basso",
+  esterno_basso: "Esterno basso",
 
   "esterno a tutta fascia": "Esterno a tutta fascia",
-  "esterno_a_tutta_fascia": "Esterno a tutta fascia",
+  esterno_a_tutta_fascia: "Esterno a tutta fascia",
 
   "terzino invertito": "Terzino invertito",
-  "terzino_invertito": "Terzino invertito",
+  terzino_invertito: "Terzino invertito",
 
   "esterno invertito": "Esterno invertito",
-  "esterno_invertito": "Esterno invertito",
+  esterno_invertito: "Esterno invertito",
 
   "difensore centrale": "Difensore centrale",
-  "difensore_centrale": "Difensore centrale",
+  difensore_centrale: "Difensore centrale",
 
   "difensore centrale con impostazione":
     "Difensore centrale con impostazione",
-  "difensore_centrale_con_impostazione":
+  difensore_centrale_con_impostazione:
     "Difensore centrale con impostazione",
 
-  "difensore centrale largo": "Difensore centrale largo",
-  "difensore_centrale_largo": "Difensore centrale largo",
+  "difensore centrale largo":
+    "Difensore centrale largo",
+  difensore_centrale_largo:
+    "Difensore centrale largo",
 
-  "difensore arcigno": "Difensore arcigno",
-  "difensore_arcigno": "Difensore arcigno",
+  "difensore arcigno":
+    "Difensore arcigno",
+  difensore_arcigno:
+    "Difensore arcigno",
 
-  "mediano": "Mediano",
-  "mediano d attesa": "Mediano d'attesa",
-  "mediano d'attesa": "Mediano d'attesa",
-  "mediano_d_attesa": "Mediano d'attesa",
+  mediano: "Mediano",
 
-  "centrocampista difensivo": "Centrocampista difensivo",
-  "centrocampista_difensivo": "Centrocampista difensivo",
+  "mediano d attesa":
+    "Mediano d'attesa",
+  "mediano d'attesa":
+    "Mediano d'attesa",
+  mediano_d_attesa:
+    "Mediano d'attesa",
 
-  "regista arretrato": "Regista arretrato",
-  "regista_arretrato": "Regista arretrato",
+  "centrocampista difensivo":
+    "Centrocampista difensivo",
+  centrocampista_difensivo:
+    "Centrocampista difensivo",
 
-  "centrocampista": "Centrocampista",
+  "regista arretrato":
+    "Regista arretrato",
+  regista_arretrato:
+    "Regista arretrato",
 
-  "centrocampista incursore": "Centrocampista incursore",
-  "centrocampista_incursore": "Centrocampista incursore",
+  centrocampista:
+    "Centrocampista",
 
-  "mezzala": "Mezzala",
+  "centrocampista incursore":
+    "Centrocampista incursore",
+  centrocampista_incursore:
+    "Centrocampista incursore",
 
-  "regista": "Regista",
+  mezzala:
+    "Mezzala",
 
-  "rifinitore": "Rifinitore",
+  regista:
+    "Regista",
 
-  "trequartista": "Trequartista",
+  rifinitore:
+    "Rifinitore",
 
-  "ala": "Ala",
+  trequartista:
+    "Trequartista",
 
-  "ala invertita": "Ala invertita",
-  "ala_invertita": "Ala invertita",
+  ala:
+    "Ala",
 
-  "attaccante esterno": "Attaccante esterno",
-  "attaccante_esterno": "Attaccante esterno",
+  "ala invertita":
+    "Ala invertita",
+  ala_invertita:
+    "Ala invertita",
 
-  "ala interna": "Ala interna",
-  "ala_interna": "Ala interna",
+  "attaccante esterno":
+    "Attaccante esterno",
+  attaccante_esterno:
+    "Attaccante esterno",
 
-  "seconda punta": "Seconda punta",
-  "seconda_punta": "Seconda punta",
+  "ala interna":
+    "Ala interna",
+  ala_interna:
+    "Ala interna",
 
-  "trequartista avanzato": "Trequartista avanzato",
-  "trequartista_avanzato": "Trequartista avanzato",
+  "seconda punta":
+    "Seconda punta",
+  seconda_punta:
+    "Seconda punta",
 
-  "attaccante avanzato": "Attaccante avanzato",
-  "attaccante_avanzato": "Attaccante avanzato",
+  "trequartista avanzato":
+    "Trequartista avanzato",
+  trequartista_avanzato:
+    "Trequartista avanzato",
 
-  "attaccante di pressione": "Attaccante di pressione",
-  "attaccante_di_pressione": "Attaccante di pressione",
+  "attaccante avanzato":
+    "Attaccante avanzato",
+  attaccante_avanzato:
+    "Attaccante avanzato",
 
-  "attaccante boa": "Attaccante boa",
-  "attaccante_boa": "Attaccante boa",
+  "attaccante di pressione":
+    "Attaccante di pressione",
+  attaccante_di_pressione:
+    "Attaccante di pressione",
 
-  "attaccante completo": "Attaccante completo",
-  "attaccante_completo": "Attaccante completo",
+  "attaccante boa":
+    "Attaccante boa",
+  attaccante_boa:
+    "Attaccante boa",
+
+  "attaccante completo":
+    "Attaccante completo",
+  attaccante_completo:
+    "Attaccante completo",
 };
 
 function normalizeRole(role) {
-  const normalized = normalizeText(role);
+  const key = normalizeText(role);
 
-  if (!normalized) {
-    return "Centrocampista";
-  }
-
-  return ROLE_ALIASES[normalized] || role || "Centrocampista";
+  return (
+    ROLE_ALIASES[key] ||
+    ROLE_ALIASES[key.replace(/ /g, "_")] ||
+    "Centrocampista"
+  );
 }
 
 function getRole(player) {
@@ -162,102 +250,237 @@ function getRole(player) {
 }
 
 // ============================================================
-// ATTRIBUTES
+// ATTRIBUTE SYSTEM
 // ============================================================
 
-function getNestedAttribute(player, group, keys) {
-  const object = player?.attributes?.[group];
-
-  if (!object || typeof object !== "object") {
-    return null;
-  }
-
-  for (const key of keys) {
-    const value = object[key];
-
-    if (value !== undefined && value !== null) {
-      return Number(value);
-    }
-  }
-
-  return null;
-}
-
-function getFlatAttribute(player, keys) {
-  for (const key of keys) {
-    const value = player?.[key];
-
-    if (value !== undefined && value !== null) {
-      return Number(value);
-    }
-  }
-
-  return null;
-}
-
 const ATTRIBUTE_ALIASES = {
-  primoControllo: ["primoControllo", "firstTouch", "controllo"],
-  dribbling: ["dribbling"],
-  passaggi: ["passaggi", "passing"],
-  tecnica: ["tecnica", "technique"],
-  cross: ["cross"],
-  tiro: ["tiro", "shooting"],
-  finalizzazione: ["finalizzazione", "finishing"],
-  tiriDaLontano: ["tiriDaLontano", "longShots"],
-  punizioni: ["punizioni", "freeKicks"],
-  rigori: ["rigori", "penalties"],
-  calciDangolo: ["calciDangolo", "calciDAngolo", "corners"],
-  contrasti: ["contrasti", "tackling"],
-  marcatura: ["marcatura", "marking"],
-  colpiDiTesta: ["colpiDiTesta", "heading"],
-  rimesseLaterali: ["rimesseLaterali", "throwIns"],
-  piedeDebole: ["piedeDebole", "weakFoot"],
+  primoControllo: [
+    "primoControllo",
+    "firstTouch",
+    "controllo",
+  ],
 
-  decisioni: ["decisioni", "decisions"],
-  visione: ["visione", "vision"],
-  anticipazione: ["anticipazione", "anticipation"],
-  concentrazione: ["concentrazione", "concentration"],
-  freddezza: ["freddezza", "composure"],
-  determinazione: ["determinazione", "determination"],
-  aggressivita: ["aggressivita", "aggressività", "aggression"],
-  coraggio: ["coraggio", "bravery"],
-  posizionamento: ["posizionamento", "positioning"],
+  dribbling: [
+    "dribbling",
+  ],
+
+  passaggi: [
+    "passaggi",
+    "passing",
+  ],
+
+  tecnica: [
+    "tecnica",
+    "technique",
+  ],
+
+  cross: [
+    "cross",
+  ],
+
+  tiro: [
+    "tiro",
+    "shooting",
+  ],
+
+  finalizzazione: [
+    "finalizzazione",
+    "finishing",
+  ],
+
+  tiriDaLontano: [
+    "tiriDaLontano",
+    "longShots",
+  ],
+
+  punizioni: [
+    "punizioni",
+    "freeKicks",
+  ],
+
+  rigori: [
+    "rigori",
+    "penalties",
+  ],
+
+  calciDangolo: [
+    "calciDangolo",
+    "calciDAngolo",
+    "corners",
+  ],
+
+  contrasti: [
+    "contrasti",
+    "tackling",
+  ],
+
+  marcatura: [
+    "marcatura",
+    "marking",
+  ],
+
+  colpiDiTesta: [
+    "colpiDiTesta",
+    "heading",
+  ],
+
+  rimesseLaterali: [
+    "rimesseLaterali",
+    "throwIns",
+  ],
+
+  piedeDebole: [
+    "piedeDebole",
+    "weakFoot",
+  ],
+
+  decisioni: [
+    "decisioni",
+    "decisions",
+  ],
+
+  visione: [
+    "visione",
+    "vision",
+  ],
+
+  anticipazione: [
+    "anticipazione",
+    "anticipation",
+  ],
+
+  concentrazione: [
+    "concentrazione",
+    "concentration",
+  ],
+
+  freddezza: [
+    "freddezza",
+    "composure",
+  ],
+
+  determinazione: [
+    "determinazione",
+    "determination",
+  ],
+
+  aggressivita: [
+    "aggressivita",
+    "aggressività",
+    "aggression",
+  ],
+
+  coraggio: [
+    "coraggio",
+    "bravery",
+  ],
+
+  posizionamento: [
+    "posizionamento",
+    "positioning",
+  ],
+
   movimentoSenzaPalla: [
     "movimentoSenzaPalla",
     "movimento_senza_palla",
     "offTheBall",
   ],
-  collaborazione: ["collaborazione", "teamwork"],
-  leadership: ["leadership"],
-  impegno: ["impegno", "workRate"],
-  costanza: ["costanza", "consistency"],
+
+  collaborazione: [
+    "collaborazione",
+    "teamwork",
+  ],
+
+  leadership: [
+    "leadership",
+  ],
+
+  impegno: [
+    "impegno",
+    "workRate",
+  ],
+
+  costanza: [
+    "costanza",
+    "consistency",
+  ],
+
   sensoDellaPosizione: [
     "sensoDellaPosizione",
     "senso_della_posizione",
     "positionalSense",
   ],
-  adattabilita: ["adattabilita", "adattabilità", "adaptability"],
-  giocoDiSquadra: [
-    "giocoDiSquadra",
-    "gioco_della_squadra",
-    "giocoDellaSquadra",
-    "teamPlay",
-    "teamwork",
+
+  adattabilita: [
+    "adattabilita",
+    "adattabilità",
+    "adaptability",
   ],
 
-  accelerazione: ["accelerazione", "acceleration"],
-  velocita: ["velocita", "velocità", "pace", "speed"],
-  agilita: ["agilita", "agilità", "agility"],
-  equilibrio: ["equilibrio", "balance"],
-  forza: ["forza", "strength"],
-  resistenza: ["resistenza", "stamina"],
-  elevazione: ["elevazione", "jumping"],
-  reattivita: ["reattivita", "reattività", "reaction"],
-  coordinazione: ["coordinazione", "coordination"],
-  recuperoFisico: ["recuperoFisico", "recupero_fisico", "recovery"],
+  giocoDiSquadra: [
+    "giocoDiSquadra",
+    "giocoDellaSquadra",
+    "gioco_della_squadra",
+    "teamPlay",
+  ],
+
+  accelerazione: [
+    "accelerazione",
+    "acceleration",
+  ],
+
+  velocita: [
+    "velocita",
+    "velocità",
+    "pace",
+    "speed",
+  ],
+
+  agilita: [
+    "agilita",
+    "agilità",
+    "agility",
+  ],
+
+  equilibrio: [
+    "equilibrio",
+    "balance",
+  ],
+
+  forza: [
+    "forza",
+    "strength",
+  ],
+
+  resistenza: [
+    "resistenza",
+    "stamina",
+  ],
+
+  elevazione: [
+    "elevazione",
+    "jumping",
+  ],
+
+  reattivita: [
+    "reattivita",
+    "reattività",
+    "reaction",
+  ],
+
+  coordinazione: [
+    "coordinazione",
+    "coordination",
+  ],
+
+  recuperoFisico: [
+    "recuperoFisico",
+    "recupero_fisico",
+    "recovery",
+  ],
 };
 
-const TECHNICAL_ATTRIBUTES = new Set([
+const TECHNICAL = new Set([
   "primoControllo",
   "dribbling",
   "passaggi",
@@ -276,7 +499,7 @@ const TECHNICAL_ATTRIBUTES = new Set([
   "piedeDebole",
 ]);
 
-const MENTAL_ATTRIBUTES = new Set([
+const MENTAL = new Set([
   "decisioni",
   "visione",
   "anticipazione",
@@ -296,7 +519,7 @@ const MENTAL_ATTRIBUTES = new Set([
   "giocoDiSquadra",
 ]);
 
-const PHYSICAL_ATTRIBUTES = new Set([
+const PHYSICAL = new Set([
   "accelerazione",
   "velocita",
   "agilita",
@@ -309,48 +532,91 @@ const PHYSICAL_ATTRIBUTES = new Set([
   "recuperoFisico",
 ]);
 
+function readObjectValue(object, aliases) {
+  if (!object || typeof object !== "object") {
+    return null;
+  }
+
+  for (const key of aliases) {
+    if (
+      object[key] !== undefined &&
+      object[key] !== null &&
+      Number.isFinite(Number(object[key]))
+    ) {
+      return Number(object[key]);
+    }
+  }
+
+  return null;
+}
+
 function getAttribute(player, name, fallback = 50) {
-  const aliases = ATTRIBUTE_ALIASES[name] || [name];
+  const aliases =
+    ATTRIBUTE_ALIASES[name] || [name];
 
   let value = null;
 
-  if (TECHNICAL_ATTRIBUTES.has(name)) {
-    value = getNestedAttribute(player, "technical", aliases);
+  // ATTRIBUTI TECNICI
+  if (TECHNICAL.has(name)) {
+    value = readObjectValue(
+      player?.attributes?.technical,
+      aliases
+    );
   }
 
-  if (value === null && MENTAL_ATTRIBUTES.has(name)) {
-    value = getNestedAttribute(player, "mental", aliases);
+  // ATTRIBUTI MENTALI
+  if (value === null && MENTAL.has(name)) {
+    value = readObjectValue(
+      player?.attributes?.mental,
+      aliases
+    );
   }
 
-  if (value === null && PHYSICAL_ATTRIBUTES.has(name)) {
-    value = getNestedAttribute(player, "physical", aliases);
+  // ATTRIBUTI FISICI
+  if (value === null && PHYSICAL.has(name)) {
+    value = readObjectValue(
+      player?.attributes?.physical,
+      aliases
+    );
   }
 
+  // Fallback eventuale a struttura piatta.
   if (value === null) {
-    value = getFlatAttribute(player, aliases);
+    value = readObjectValue(
+      player,
+      aliases
+    );
   }
 
-  if (value === null || !Number.isFinite(value)) {
-    return fallback;
-  }
-
-  return clamp(value / 99, 0, 1);
+  return normalizeAttribute(
+    value,
+    fallback
+  );
 }
 
-function getGKAttribute(player, name, fallback = 50) {
-  const aliases = ATTRIBUTE_ALIASES[name] || [name];
+function getGKAttribute(
+  player,
+  name,
+  fallback = 50
+) {
+  const aliases =
+    ATTRIBUTE_ALIASES[name] || [name];
 
-  let value = getNestedAttribute(player, "goalkeeper", aliases);
+  const value =
+    readObjectValue(
+      player?.attributes?.goalkeeper,
+      aliases
+    );
 
-  if (value === null) {
-    value = getFlatAttribute(player, aliases);
+  if (value !== null) {
+    return normalizeAttribute(value);
   }
 
-  if (value === null || !Number.isFinite(value)) {
-    return fallback;
-  }
-
-  return clamp(value / 99, 0, 1);
+  return getAttribute(
+    player,
+    name,
+    fallback
+  );
 }
 
 // ============================================================
@@ -723,90 +989,146 @@ const ROLE_PROFILES = {
 };
 
 function getRoleProfile(role) {
-  const normalized = normalizeRole(role);
+  const normalizedRole =
+    normalizeRole(role);
 
   return (
-    ROLE_PROFILES[normalized] ||
+    ROLE_PROFILES[normalizedRole] ||
     ROLE_PROFILES.Centrocampista
   );
 }
 
 // ============================================================
-// POSITION / SPATIAL
+// POSITIONS
 // ============================================================
 
 function getPosition(player) {
-  const x = Number(
+  const rawX =
     player?.actualPosition?.x ??
-      player?.position?.x ??
-      player?.x ??
-      0.5
-  );
+    player?.position?.x ??
+    player?.x ??
+    0.5;
 
-  const y = Number(
+  const rawY =
     player?.actualPosition?.y ??
-      player?.position?.y ??
-      player?.y ??
-      0.5
-  );
+    player?.position?.y ??
+    player?.y ??
+    0.5;
+
+  const x =
+    Number(rawX) > 1
+      ? Number(rawX) / 100
+      : Number(rawX);
+
+  const y =
+    Number(rawY) > 1
+      ? Number(rawY) / 100
+      : Number(rawY);
 
   return {
-    x: clamp(x > 1 ? x / 100 : x),
-    y: clamp(y > 1 ? y / 100 : y),
+    x: clamp(x, 0, 1),
+    y: clamp(y, 0, 1),
   };
 }
 
 function getBallPosition(ball) {
   if (!ball) {
-    return { x: 0.5, y: 0.5 };
+    return {
+      x: 0.5,
+      y: 0.5,
+    };
   }
 
+  const rawX =
+    Number(ball.x ?? 0.5);
+
+  const rawY =
+    Number(ball.y ?? 0.5);
+
   return {
-    x: clamp(Number(ball.x ?? 0.5)),
-    y: clamp(Number(ball.y ?? 0.5)),
+    x: clamp(
+      rawX > 1 ? rawX / 100 : rawX
+    ),
+
+    y: clamp(
+      rawY > 1 ? rawY / 100 : rawY
+    ),
   };
 }
 
 function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
+  if (!a || !b) {
+    return 1;
+  }
 
-  return Math.sqrt(dx * dx + dy * dy);
+  const dx =
+    Number(a.x) - Number(b.x);
+
+  const dy =
+    Number(a.y) - Number(b.y);
+
+  return Math.sqrt(
+    dx * dx +
+    dy * dy
+  );
 }
 
 function getGoalPosition(side) {
   return side === "home"
-    ? { x: 1, y: 0.5 }
-    : { x: 0, y: 0.5 };
+    ? {
+        x: 1,
+        y: 0.5,
+      }
+    : {
+        x: 0,
+        y: 0.5,
+      };
 }
 
 function getAttackDirection(side) {
-  return side === "home" ? 1 : -1;
+  return side === "home"
+    ? 1
+    : -1;
 }
 
-function getProgressToGoal(player, side) {
-  const pos = getPosition(player);
-  const direction = getAttackDirection(side);
+function getProgressToGoal(
+  player,
+  side
+) {
+  const pos =
+    getPosition(player);
 
-  return clamp(
-    side === "home" ? pos.x : 1 - pos.x
-  );
+  return side === "home"
+    ? clamp(pos.x)
+    : clamp(1 - pos.x);
 }
 
 // ============================================================
 // PRESSURE / SPACE
 // ============================================================
 
-function calculatePressure(player, opponents = []) {
-  const pos = getPosition(player);
+function calculatePressure(
+  player,
+  opponents = []
+) {
+  const playerPos =
+    getPosition(player);
 
-  let nearest = Infinity;
+  const opponentList =
+    toPlayerArray(opponents);
 
-  for (const opponent of opponents || []) {
-    if (!opponent) continue;
+  let nearest =
+    Infinity;
 
-    const opponentPos = getPosition(opponent);
-    const d = distance(pos, opponentPos);
+  for (const opponent of opponentList) {
+    const opponentPos =
+      getPosition(opponent);
+
+    const d =
+      distance(
+        playerPos,
+        opponentPos
+      );
 
     if (d < nearest) {
       nearest = d;
@@ -817,21 +1139,33 @@ function calculatePressure(player, opponents = []) {
     return 0;
   }
 
-  // 0 = nessuna pressione
-  // 1 = pressione fortissima
-  return clamp(1 - nearest / 0.25);
+  return clamp(
+    1 - nearest / 0.25
+  );
 }
 
-function calculateFreeSpace(player, opponents = []) {
-  const pos = getPosition(player);
+function calculateFreeSpace(
+  player,
+  opponents = []
+) {
+  const playerPos =
+    getPosition(player);
 
-  let nearest = Infinity;
+  const opponentList =
+    toPlayerArray(opponents);
 
-  for (const opponent of opponents || []) {
-    if (!opponent) continue;
+  let nearest =
+    Infinity;
 
-    const opponentPos = getPosition(opponent);
-    const d = distance(pos, opponentPos);
+  for (const opponent of opponentList) {
+    const opponentPos =
+      getPosition(opponent);
+
+    const d =
+      distance(
+        playerPos,
+        opponentPos
+      );
 
     if (d < nearest) {
       nearest = d;
@@ -842,7 +1176,9 @@ function calculateFreeSpace(player, opponents = []) {
     return 1;
   }
 
-  return clamp(nearest / 0.35);
+  return clamp(
+    nearest / 0.35
+  );
 }
 
 // ============================================================
@@ -856,51 +1192,105 @@ function scorePassTarget(
   opponents = [],
   teamInstructions = {}
 ) {
-  if (!receiver || receiver.id === passer.id) {
+  if (
+    !receiver ||
+    receiver.id === passer?.id
+  ) {
     return -Infinity;
   }
 
-  const passerPos = getPosition(passer);
-  const receiverPos = getPosition(receiver);
+  const passerPos =
+    getPosition(passer);
 
-  const passDistance = distance(passerPos, receiverPos);
+  const receiverPos =
+    getPosition(receiver);
+
+  const passDistance =
+    distance(
+      passerPos,
+      receiverPos
+    );
 
   if (passDistance > 0.65) {
     return -Infinity;
   }
 
-  const direction = getAttackDirection(side);
+  const direction =
+    getAttackDirection(side);
 
   const progression =
-    direction * (receiverPos.x - passerPos.x);
-
-  const receiverSpace = calculateFreeSpace(
-    receiver,
-    opponents
-  );
-
-  const receiverQuality =
+    direction *
     (
-      getAttribute(receiver, "primoControllo") * 0.35 +
-      getAttribute(receiver, "passaggi") * 0.20 +
-      getAttribute(receiver, "decisioni") * 0.20 +
-      getAttribute(receiver, "visione") * 0.15 +
-      getAttribute(receiver, "giocoDiSquadra") * 0.10
+      receiverPos.x -
+      passerPos.x
     );
 
-  const progressionScore = clamp(
-    0.5 + progression * 2
-  );
+  const receiverSpace =
+    calculateFreeSpace(
+      receiver,
+      opponents
+    );
+
+  const receiverQuality =
+    getAttribute(
+      receiver,
+      "primoControllo"
+    ) * 0.35 +
+
+    getAttribute(
+      receiver,
+      "passaggi"
+    ) * 0.20 +
+
+    getAttribute(
+      receiver,
+      "decisioni"
+    ) * 0.20 +
+
+    getAttribute(
+      receiver,
+      "visione"
+    ) * 0.15 +
+
+    getAttribute(
+      receiver,
+      "giocoDiSquadra"
+    ) * 0.10;
+
+  const progressionScore =
+    clamp(
+      0.5 +
+      progression * 2
+    );
 
   const distanceScore =
-    1 - clamp(passDistance / 0.65);
+    1 -
+    clamp(
+      passDistance / 0.65
+    );
 
-  const tacticalRisk =
-    teamInstructions?.passRisk === "high"
-      ? 0.10
-      : teamInstructions?.passRisk === "low"
-        ? -0.10
-        : 0;
+  const passRisk =
+    normalizeText(
+      teamInstructions?.passRisk ??
+      teamInstructions?.rischioPassaggio ??
+      ""
+    );
+
+  let tacticalRisk = 0;
+
+  if (
+    passRisk === "high" ||
+    passRisk === "alto"
+  ) {
+    tacticalRisk = 0.10;
+  }
+
+  if (
+    passRisk === "low" ||
+    passRisk === "basso"
+  ) {
+    tacticalRisk = -0.10;
+  }
 
   return (
     progressionScore * 0.32 +
@@ -919,17 +1309,21 @@ function findBestPassTarget(
   side = "home",
   teamInstructions = {}
 ) {
+  const teammateList =
+    toPlayerArray(teammates);
+
   let bestTarget = null;
   let bestScore = -Infinity;
 
-  for (const teammate of teammates || []) {
-    const score = scorePassTarget(
-      passer,
-      teammate,
-      side,
-      opponents,
-      teamInstructions
-    );
+  for (const teammate of teammateList) {
+    const score =
+      scorePassTarget(
+        passer,
+        teammate,
+        side,
+        opponents,
+        teamInstructions
+      );
 
     if (score > bestScore) {
       bestScore = score;
@@ -944,20 +1338,22 @@ function findBestPassTarget(
 }
 
 // ============================================================
-// TACTICAL HELPERS
+// ROLE GROUPS
 // ============================================================
 
 function isGoalkeeperRole(role) {
-  const normalized = normalizeRole(role);
+  const r =
+    normalizeRole(role);
 
   return (
-    normalized === "Portiere" ||
-    normalized === "Portiere libero"
+    r === "Portiere" ||
+    r === "Portiere libero"
   );
 }
 
 function isDefenderRole(role) {
-  const normalized = normalizeRole(role);
+  const r =
+    normalizeRole(role);
 
   return [
     "Terzino",
@@ -971,11 +1367,12 @@ function isDefenderRole(role) {
     "Difensore centrale con impostazione",
     "Difensore centrale largo",
     "Difensore arcigno",
-  ].includes(normalized);
+  ].includes(r);
 }
 
 function isMidfieldRole(role) {
-  const normalized = normalizeRole(role);
+  const r =
+    normalizeRole(role);
 
   return [
     "Mediano",
@@ -988,11 +1385,12 @@ function isMidfieldRole(role) {
     "Regista",
     "Rifinitore",
     "Trequartista",
-  ].includes(normalized);
+  ].includes(r);
 }
 
 function isAttackingRole(role) {
-  const normalized = normalizeRole(role);
+  const r =
+    normalizeRole(role);
 
   return [
     "Ala",
@@ -1005,15 +1403,22 @@ function isAttackingRole(role) {
     "Attaccante di pressione",
     "Attaccante boa",
     "Attaccante completo",
-  ].includes(normalized);
+  ].includes(r);
 }
 
-function getMentalityModifier(teamInstructions = {}) {
-  const mentality = normalizeText(
-    teamInstructions?.mentality ??
+// ============================================================
+// MENTALITY
+// ============================================================
+
+function getMentalityModifier(
+  teamInstructions = {}
+) {
+  const mentality =
+    normalizeText(
+      teamInstructions?.mentality ??
       teamInstructions?.mentalita ??
       "balanced"
-  );
+    );
 
   if (
     mentality === "very attacking" ||
@@ -1047,7 +1452,7 @@ function getMentalityModifier(teamInstructions = {}) {
 }
 
 // ============================================================
-// SHOOT SCORE
+// SHOOT
 // ============================================================
 
 function scoreShot(
@@ -1057,70 +1462,102 @@ function scoreShot(
   opponents = [],
   teamInstructions = {}
 ) {
-  const role = getRole(player);
+  const role =
+    getRole(player);
 
-  // Il portiere NON deve normalmente tirare.
+  // MAI tiro normale del portiere.
   if (isGoalkeeperRole(role)) {
-    return 0.001;
+    return 0.0001;
   }
 
-  const pos = getPosition(player);
-  const ballPos = getBallPosition(ball);
-  const goal = getGoalPosition(side);
+  const pos =
+    getPosition(player);
 
-  const goalDistance = distance(
-    ballPos,
-    goal
-  );
+  const ballPos =
+    getBallPosition(ball);
 
-  const progress = getProgressToGoal(
-    player,
-    side
-  );
+  const goal =
+    getGoalPosition(side);
 
-  const finalThird =
+  const goalDistance =
+    distance(
+      ballPos,
+      goal
+    );
+
+  const progress =
+    getProgressToGoal(
+      player,
+      side
+    );
+
+  const inFinalThird =
     progress >= 0.67;
 
-  const shootingZone =
+  const inShootingZone =
     progress >= 0.72;
 
-  const penaltyZone =
+  const inPenaltyZone =
     progress >= 0.84 &&
-    Math.abs(pos.y - 0.5) <= 0.25;
+    Math.abs(
+      pos.y - 0.5
+    ) <= 0.25;
 
-  const pressure = calculatePressure(
-    player,
-    opponents
-  );
+  const pressure =
+    calculatePressure(
+      player,
+      opponents
+    );
 
-  const space = calculateFreeSpace(
-    player,
-    opponents
-  );
+  const space =
+    calculateFreeSpace(
+      player,
+      opponents
+    );
 
   const finishing =
-    getAttribute(player, "finalizzazione");
+    getAttribute(
+      player,
+      "finalizzazione"
+    );
 
   const shooting =
-    getAttribute(player, "tiro");
+    getAttribute(
+      player,
+      "tiro"
+    );
 
   const longShots =
-    getAttribute(player, "tiriDaLontano");
+    getAttribute(
+      player,
+      "tiriDaLontano"
+    );
 
   const technique =
-    getAttribute(player, "tecnica");
+    getAttribute(
+      player,
+      "tecnica"
+    );
 
   const decisions =
-    getAttribute(player, "decisioni");
+    getAttribute(
+      player,
+      "decisioni"
+    );
 
   const composure =
-    getAttribute(player, "freddezza");
+    getAttribute(
+      player,
+      "freddezza"
+    );
 
-  const roleProfile =
+  const profile =
     getRoleProfile(role);
 
   const mentality =
-    getMentalityModifier(teamInstructions);
+    getMentalityModifier(
+      teamInstructions
+    );
 
   let quality =
     finishing * 0.32 +
@@ -1129,49 +1566,53 @@ function scoreShot(
     decisions * 0.12 +
     composure * 0.10 +
     space * 0.08 +
-    roleProfile.shoot * 0.06;
+    profile.shoot * 0.06;
 
-  // Tiro da lontano.
+  // Lontano dalla porta:
+  // entra in gioco molto di più il tiro da lontano.
   if (goalDistance > 0.32) {
     quality *=
       0.45 +
       longShots * 0.55;
   }
 
-  // Fuori dalla trequarti offensiva il tiro deve essere raro.
-  if (!finalThird) {
+  // Fuori dalla zona offensiva:
+  // tiro molto raro.
+  if (!inFinalThird) {
     quality *= 0.08;
   }
 
-  // Nella zona di tiro.
-  if (shootingZone) {
+  if (inShootingZone) {
     quality *= 1.45;
   }
 
-  // Dentro area.
-  if (penaltyZone) {
+  if (inPenaltyZone) {
     quality *= 1.35;
   }
 
-  // Pressione riduce la qualità.
-  quality *= 1 - pressure * 0.45;
+  quality *=
+    1 -
+    pressure * 0.45;
 
-  // Mentalità.
-  quality *= 1 + mentality.shoot;
+  quality *=
+    1 +
+    mentality.shoot;
 
-  // Ruoli offensivi.
   if (isAttackingRole(role)) {
     quality *= 1.20;
   }
 
-  // Difensori tirano quasi esclusivamente da palle
-  // molto avanzate / seconde palle.
   if (isDefenderRole(role)) {
-    quality *= finalThird ? 0.55 : 0.08;
+    quality *=
+      inFinalThird
+        ? 0.55
+        : 0.08;
   }
 
-  // Centrocampisti hanno più possibilità dalla distanza.
-  if (isMidfieldRole(role) && goalDistance > 0.32) {
+  if (
+    isMidfieldRole(role) &&
+    goalDistance > 0.32
+  ) {
     quality *= 1.15;
   }
 
@@ -1179,42 +1620,66 @@ function scoreShot(
 }
 
 // ============================================================
-// DRIBBLE / CARRY
+// DRIBBLE
 // ============================================================
 
 function scoreDribble(
   player,
   side,
-  opponents = [],
-  teamInstructions = {}
+  opponents = []
 ) {
-  const role = getRole(player);
+  const role =
+    getRole(player);
 
   const dribbling =
-    getAttribute(player, "dribbling");
+    getAttribute(
+      player,
+      "dribbling"
+    );
 
   const technique =
-    getAttribute(player, "tecnica");
+    getAttribute(
+      player,
+      "tecnica"
+    );
 
   const acceleration =
-    getAttribute(player, "accelerazione");
+    getAttribute(
+      player,
+      "accelerazione"
+    );
 
   const agility =
-    getAttribute(player, "agilita");
+    getAttribute(
+      player,
+      "agilita"
+    );
 
   const decisions =
-    getAttribute(player, "decisioni");
+    getAttribute(
+      player,
+      "decisioni"
+    );
 
   const pressure =
-    calculatePressure(player, opponents);
+    calculatePressure(
+      player,
+      opponents
+    );
 
   const space =
-    calculateFreeSpace(player, opponents);
+    calculateFreeSpace(
+      player,
+      opponents
+    );
 
   const progress =
-    getProgressToGoal(player, side);
+    getProgressToGoal(
+      player,
+      side
+    );
 
-  const roleProfile =
+  const profile =
     getRoleProfile(role);
 
   let score =
@@ -1224,14 +1689,15 @@ function scoreDribble(
     agility * 0.14 +
     decisions * 0.08 +
     space * 0.06 +
-    roleProfile.dribble * 0.04;
+    profile.dribble * 0.04;
 
   score *=
     0.55 +
     space * 0.45;
 
   score *=
-    1 - pressure * 0.30;
+    1 -
+    pressure * 0.30;
 
   if (isAttackingRole(role)) {
     score *= 1.20;
@@ -1244,39 +1710,67 @@ function scoreDribble(
   return clamp(score);
 }
 
+// ============================================================
+// CARRY
+// ============================================================
+
 function scoreCarry(
   player,
   side,
-  opponents = [],
-  teamInstructions = {}
+  opponents = []
 ) {
-  const role = getRole(player);
+  const role =
+    getRole(player);
 
   const dribbling =
-    getAttribute(player, "dribbling");
+    getAttribute(
+      player,
+      "dribbling"
+    );
 
   const acceleration =
-    getAttribute(player, "accelerazione");
+    getAttribute(
+      player,
+      "accelerazione"
+    );
 
   const speed =
-    getAttribute(player, "velocita");
+    getAttribute(
+      player,
+      "velocita"
+    );
 
   const agility =
-    getAttribute(player, "agilita");
+    getAttribute(
+      player,
+      "agilita"
+    );
 
   const decisions =
-    getAttribute(player, "decisioni");
+    getAttribute(
+      player,
+      "decisioni"
+    );
 
   const space =
-    calculateFreeSpace(player, opponents);
+    calculateFreeSpace(
+      player,
+      opponents
+    );
 
   const pressure =
-    calculatePressure(player, opponents);
+    calculatePressure(
+      player,
+      opponents
+    );
 
   const progress =
-    getProgressToGoal(player, side);
+    getProgressToGoal(
+      player,
+      side
+    );
 
-  const roleProfile =
+  const profile =
     getRoleProfile(role);
 
   let score =
@@ -1286,14 +1780,15 @@ function scoreCarry(
     speed * 0.12 +
     agility * 0.10 +
     decisions * 0.08 +
-    roleProfile.carry * 0.07;
+    profile.carry * 0.07;
 
   score *=
     0.60 +
     space * 0.40;
 
   score *=
-    1 - pressure * 0.25;
+    1 -
+    pressure * 0.25;
 
   if (isAttackingRole(role)) {
     score *= 1.25;
@@ -1307,7 +1802,7 @@ function scoreCarry(
 }
 
 // ============================================================
-// PASS SCORE
+// PASS
 // ============================================================
 
 function scorePass(
@@ -1321,35 +1816,58 @@ function scorePass(
     return 0.01;
   }
 
-  const role = getRole(player);
-  const target = bestPass.target;
+  const role =
+    getRole(player);
 
   const passing =
-    getAttribute(player, "passaggi");
+    getAttribute(
+      player,
+      "passaggi"
+    );
 
   const technique =
-    getAttribute(player, "tecnica");
+    getAttribute(
+      player,
+      "tecnica"
+    );
 
   const decisions =
-    getAttribute(player, "decisioni");
+    getAttribute(
+      player,
+      "decisioni"
+    );
 
   const vision =
-    getAttribute(player, "visione");
+    getAttribute(
+      player,
+      "visione"
+    );
 
   const anticipation =
-    getAttribute(player, "anticipazione");
+    getAttribute(
+      player,
+      "anticipazione"
+    );
 
   const pressure =
-    calculatePressure(player, opponents);
+    calculatePressure(
+      player,
+      opponents
+    );
 
-  const roleProfile =
+  const profile =
     getRoleProfile(role);
 
   const progress =
-    getProgressToGoal(player, side);
+    getProgressToGoal(
+      player,
+      side
+    );
 
   const mentality =
-    getMentalityModifier(teamInstructions);
+    getMentalityModifier(
+      teamInstructions
+    );
 
   let score =
     bestPass.score * 0.35 +
@@ -1358,20 +1876,19 @@ function scorePass(
     decisions * 0.13 +
     vision * 0.12 +
     anticipation * 0.05 +
-    roleProfile.pass * 0.05;
+    profile.pass * 0.05;
 
   score *=
-    1 - pressure * 0.20;
+    1 -
+    pressure * 0.20;
 
-  score += mentality.passRisk * 0.08;
+  score +=
+    mentality.passRisk * 0.08;
 
-  // Nel terzo offensivo bisogna essere più aggressivi.
   if (progress > 0.68) {
     score *= 0.88;
   }
 
-  // Ruoli offensivi cercano maggiormente la soluzione verticale,
-  // ma non devono smettere di passare.
   if (isAttackingRole(role)) {
     score *= 0.92;
   }
@@ -1385,35 +1902,47 @@ function scorePass(
 
 function scoreHold(
   player,
-  side,
-  opponents = [],
-  teamInstructions = {}
+  opponents = []
 ) {
-  const role = getRole(player);
+  const role =
+    getRole(player);
 
   const decisions =
-    getAttribute(player, "decisioni");
+    getAttribute(
+      player,
+      "decisioni"
+    );
 
   const composure =
-    getAttribute(player, "freddezza");
+    getAttribute(
+      player,
+      "freddezza"
+    );
 
   const technique =
-    getAttribute(player, "tecnica");
+    getAttribute(
+      player,
+      "tecnica"
+    );
 
   const pressure =
-    calculatePressure(player, opponents);
+    calculatePressure(
+      player,
+      opponents
+    );
 
-  const roleProfile =
+  const profile =
     getRoleProfile(role);
 
   let score =
-    roleProfile.hold * 0.45 +
+    profile.hold * 0.45 +
     decisions * 0.20 +
     composure * 0.15 +
     technique * 0.10;
 
   score *=
-    1 - pressure * 0.40;
+    1 -
+    pressure * 0.40;
 
   return clamp(score);
 }
@@ -1430,102 +1959,129 @@ function evaluateWithBall(
   side,
   teamInstructions
 ) {
-  const role = getRole(player);
-  const profile = getRoleProfile(role);
+  const role =
+    getRole(player);
 
-  const bestPass = findBestPassTarget(
-    player,
-    teammates,
-    opponents,
-    side,
-    teamInstructions
-  );
+  const profile =
+    getRoleProfile(role);
 
-  const passScore = scorePass(
-    player,
-    bestPass,
-    side,
-    opponents,
-    teamInstructions
-  );
+  const bestPass =
+    findBestPassTarget(
+      player,
+      teammates,
+      opponents,
+      side,
+      teamInstructions
+    );
 
-  const dribbleScore = scoreDribble(
-    player,
-    side,
-    opponents,
-    teamInstructions
-  );
+  const passScore =
+    scorePass(
+      player,
+      bestPass,
+      side,
+      opponents,
+      teamInstructions
+    );
 
-  const carryScore = scoreCarry(
-    player,
-    side,
-    opponents,
-    teamInstructions
-  );
+  const dribbleScore =
+    scoreDribble(
+      player,
+      side,
+      opponents
+    );
 
-  const shotScore = scoreShot(
-    player,
-    side,
-    ball,
-    opponents,
-    teamInstructions
-  );
+  const carryScore =
+    scoreCarry(
+      player,
+      side,
+      opponents
+    );
 
-  const holdScore = scoreHold(
-    player,
-    side,
-    opponents,
-    teamInstructions
-  );
+  const shotScore =
+    scoreShot(
+      player,
+      side,
+      ball,
+      opponents,
+      teamInstructions
+    );
+
+  const holdScore =
+    scoreHold(
+      player,
+      opponents
+    );
 
   const progress =
-    getProgressToGoal(player, side);
+    getProgressToGoal(
+      player,
+      side
+    );
 
-  const pos =
+  const position =
     getPosition(player);
 
-  const ballPos =
+  const ballPosition =
     getBallPosition(ball);
 
   const goal =
     getGoalPosition(side);
 
   const goalDistance =
-    distance(ballPos, goal);
+    distance(
+      ballPosition,
+      goal
+    );
 
   const pressure =
-    calculatePressure(player, opponents);
+    calculatePressure(
+      player,
+      opponents
+    );
 
   const freeSpace =
-    calculateFreeSpace(player, opponents);
+    calculateFreeSpace(
+      player,
+      opponents
+    );
 
-  const finalThird =
+  const inFinalThird =
     progress >= 0.67;
 
-  const shootingZone =
+  const inShootingZone =
     progress >= 0.72;
 
-  const penaltyZone =
+  const inPenaltyZone =
     progress >= 0.84 &&
-    Math.abs(pos.y - 0.5) <= 0.25;
+    Math.abs(
+      position.y - 0.5
+    ) <= 0.25;
 
   const candidates = [
     {
       action: ACTIONS.PASS,
       score: passScore,
     },
+
     {
       action: ACTIONS.DRIBBLE,
-      score: dribbleScore * profile.dribble,
+      score:
+        dribbleScore *
+        profile.dribble,
     },
+
     {
       action: ACTIONS.CARRY,
-      score: carryScore * profile.carry,
+      score:
+        carryScore *
+        profile.carry,
     },
+
     {
       action: ACTIONS.SHOOT,
       score: shotScore,
     },
+
     {
       action: ACTIONS.HOLD,
       score: holdScore,
@@ -1533,29 +2089,33 @@ function evaluateWithBall(
   ];
 
   // ==========================================================
-  // PORTIERE
+  // GOALKEEPER
   // ==========================================================
 
   if (isGoalkeeperRole(role)) {
-    // Mai tiro normale del portiere.
-    candidates.forEach((candidate) => {
-      if (candidate.action === ACTIONS.SHOOT) {
+    for (const candidate of candidates) {
+      if (
+        candidate.action ===
+        ACTIONS.SHOOT
+      ) {
         candidate.score = 0.0001;
       }
 
       if (
-        candidate.action === ACTIONS.DRIBBLE ||
-        candidate.action === ACTIONS.CARRY
+        candidate.action ===
+          ACTIONS.DRIBBLE ||
+        candidate.action ===
+          ACTIONS.CARRY
       ) {
         candidate.score *= 0.10;
       }
-    });
+    }
 
-    // Il portiere privilegia passaggio/rinvio.
     const passCandidate =
       candidates.find(
-        (candidate) =>
-          candidate.action === ACTIONS.PASS
+        (c) =>
+          c.action ===
+          ACTIONS.PASS
       );
 
     if (passCandidate) {
@@ -1564,24 +2124,26 @@ function evaluateWithBall(
   }
 
   // ==========================================================
-  // ZONA OFFENSIVA
+  // FINAL THIRD
   // ==========================================================
 
-  if (finalThird) {
-    const shootCandidate =
+  if (inFinalThird) {
+    const shotCandidate =
       candidates.find(
-        (candidate) =>
-          candidate.action === ACTIONS.SHOOT
+        (c) =>
+          c.action ===
+          ACTIONS.SHOOT
       );
 
-    if (shootCandidate) {
-      shootCandidate.score *= 1.30;
+    if (shotCandidate) {
+      shotCandidate.score *= 1.30;
     }
 
     const passCandidate =
       candidates.find(
-        (candidate) =>
-          candidate.action === ACTIONS.PASS
+        (c) =>
+          c.action ===
+          ACTIONS.PASS
       );
 
     if (passCandidate) {
@@ -1589,44 +2151,50 @@ function evaluateWithBall(
     }
   }
 
-  // In area il tiro diventa molto importante.
-  if (penaltyZone) {
-    const shootCandidate =
+  // ==========================================================
+  // PENALTY AREA
+  // ==========================================================
+
+  if (inPenaltyZone) {
+    const shotCandidate =
       candidates.find(
-        (candidate) =>
-          candidate.action === ACTIONS.SHOOT
+        (c) =>
+          c.action ===
+          ACTIONS.SHOOT
       );
 
-    if (shootCandidate) {
-      shootCandidate.score *= 1.65;
+    if (shotCandidate) {
+      shotCandidate.score *= 1.65;
     }
   }
 
   // ==========================================================
-  // LONTANO DALLA PORTA
+  // OUTSIDE FINAL THIRD
   // ==========================================================
 
-  if (!finalThird) {
-    const shootCandidate =
+  if (!inFinalThird) {
+    const shotCandidate =
       candidates.find(
-        (candidate) =>
-          candidate.action === ACTIONS.SHOOT
+        (c) =>
+          c.action ===
+          ACTIONS.SHOOT
       );
 
-    if (shootCandidate) {
-      shootCandidate.score *= 0.25;
+    if (shotCandidate) {
+      shotCandidate.score *= 0.25;
     }
   }
 
   // ==========================================================
-  // PRESSIONE
+  // HIGH PRESSURE
   // ==========================================================
 
   if (pressure > 0.75) {
     const holdCandidate =
       candidates.find(
-        (candidate) =>
-          candidate.action === ACTIONS.HOLD
+        (c) =>
+          c.action ===
+          ACTIONS.HOLD
       );
 
     if (holdCandidate) {
@@ -1635,8 +2203,9 @@ function evaluateWithBall(
 
     const passCandidate =
       candidates.find(
-        (candidate) =>
-          candidate.action === ACTIONS.PASS
+        (c) =>
+          c.action ===
+          ACTIONS.PASS
       );
 
     if (passCandidate) {
@@ -1644,33 +2213,42 @@ function evaluateWithBall(
     }
   }
 
-  // ==========================================================
-  // SCELTA
-  // ==========================================================
-
   candidates.sort(
-    (a, b) => b.score - a.score
+    (a, b) =>
+      b.score -
+      a.score
   );
 
-  const best = candidates[0];
+  const best =
+    candidates[0] || {
+      action: ACTIONS.HOLD,
+      score: 0,
+    };
 
   return {
     playerId: player.id,
-    action: best?.action || ACTIONS.HOLD,
+
+    action:
+      best.action,
+
     score: Number(
-      clamp(best?.score ?? 0).toFixed(4)
+      clamp(
+        best.score
+      ).toFixed(4)
     ),
 
     role,
-    roleProfile: profile,
+
+    roleProfile:
+      profile,
 
     targetId:
-      best?.action === ACTIONS.PASS
+      best.action === ACTIONS.PASS
         ? bestPass?.target?.id ?? null
         : null,
 
     passTargetId:
-      best?.action === ACTIONS.PASS
+      best.action === ACTIONS.PASS
         ? bestPass?.target?.id ?? null
         : null,
 
@@ -1690,9 +2268,11 @@ function evaluateWithBall(
       goalDistance.toFixed(4)
     ),
 
-    inFinalThird: finalThird,
-    inShootingZone: shootingZone,
-    inPenaltyZone: penaltyZone,
+    inFinalThird,
+
+    inShootingZone,
+
+    inPenaltyZone,
 
     scores: {
       pass: Number(
@@ -1700,11 +2280,17 @@ function evaluateWithBall(
       ),
 
       dribble: Number(
-        (dribbleScore * profile.dribble).toFixed(4)
+        (
+          dribbleScore *
+          profile.dribble
+        ).toFixed(4)
       ),
 
       carry: Number(
-        (carryScore * profile.carry).toFixed(4)
+        (
+          carryScore *
+          profile.carry
+        ).toFixed(4)
       ),
 
       shoot: Number(
@@ -1727,26 +2313,37 @@ function evaluateWithoutBall(
   teammates,
   opponents,
   ball,
-  side,
-  teamInstructions
+  side
 ) {
-  const role = getRole(player);
-  const profile = getRoleProfile(role);
+  const role =
+    getRole(player);
 
-  const playerPos =
+  const profile =
+    getRoleProfile(role);
+
+  const playerPosition =
     getPosition(player);
 
-  const ballPos =
+  const ballPosition =
     getBallPosition(ball);
 
   const distanceToBall =
-    distance(playerPos, ballPos);
+    distance(
+      playerPosition,
+      ballPosition
+    );
 
   const pressure =
-    calculatePressure(player, opponents);
+    calculatePressure(
+      player,
+      opponents
+    );
 
   const freeSpace =
-    calculateFreeSpace(player, opponents);
+    calculateFreeSpace(
+      player,
+      opponents
+    );
 
   const movement =
     getAttribute(
@@ -1784,10 +2381,7 @@ function evaluateWithoutBall(
       side
     );
 
-  // ==========================================================
   // PRESS
-  // ==========================================================
-
   let pressScore =
     profile.press * 0.30 +
     anticipation * 0.20 +
@@ -1797,16 +2391,16 @@ function evaluateWithoutBall(
 
   const distancePressure =
     1 -
-    clamp(distanceToBall / 0.40);
+    clamp(
+      distanceToBall /
+      0.40
+    );
 
   pressScore *=
     0.35 +
     distancePressure * 0.65;
 
-  // ==========================================================
   // SUPPORT
-  // ==========================================================
-
   let supportScore =
     profile.support * 0.30 +
     movement * 0.20 +
@@ -1814,10 +2408,7 @@ function evaluateWithoutBall(
     teamwork * 0.18 +
     freeSpace * 0.14;
 
-  // ==========================================================
   // MOVE
-  // ==========================================================
-
   let moveScore =
     profile.attack * 0.22 +
     movement * 0.25 +
@@ -1839,19 +2430,17 @@ function evaluateWithoutBall(
     moveScore *= 1.15;
   }
 
-  // ==========================================================
-  // DECISION
-  // ==========================================================
-
   const candidates = [
     {
       action: ACTIONS.PRESS,
       score: pressScore,
     },
+
     {
       action: ACTIONS.SUPPORT,
       score: supportScore,
     },
+
     {
       action: ACTIONS.MOVE,
       score: moveScore,
@@ -1859,26 +2448,36 @@ function evaluateWithoutBall(
   ];
 
   candidates.sort(
-    (a, b) => b.score - a.score
+    (a, b) =>
+      b.score -
+      a.score
   );
 
   const best =
-    candidates[0];
+    candidates[0] || {
+      action: ACTIONS.MOVE,
+      score: 0,
+    };
 
   return {
     playerId: player.id,
+
     action:
-      best?.action ||
-      ACTIONS.MOVE,
+      best.action,
 
     score: Number(
-      clamp(best?.score ?? 0).toFixed(4)
+      clamp(
+        best.score
+      ).toFixed(4)
     ),
 
     role,
-    roleProfile: profile,
+
+    roleProfile:
+      profile,
 
     targetId: null,
+
     passTargetId: null,
 
     pressure: Number(
@@ -1899,22 +2498,28 @@ function evaluateWithoutBall(
 
     scores: {
       press: Number(
-        clamp(pressScore).toFixed(4)
+        clamp(
+          pressScore
+        ).toFixed(4)
       ),
 
       support: Number(
-        clamp(supportScore).toFixed(4)
+        clamp(
+          supportScore
+        ).toFixed(4)
       ),
 
       move: Number(
-        clamp(moveScore).toFixed(4)
+        clamp(
+          moveScore
+        ).toFixed(4)
       ),
     },
   };
 }
 
 // ============================================================
-// PLAYER EVALUATION
+// PLAYER
 // ============================================================
 
 function evaluatePlayer(
@@ -1938,11 +2543,19 @@ function evaluatePlayer(
     possession?.playerId ??
     possession?.ballOwnerId ??
     possession?.ownerId ??
+    possession?.player?.id ??
     null;
 
-  const hasBall =
+  const explicitHasBall =
     player.hasBall === true ||
-    player.id === ownerId;
+    player.has_ball === true;
+
+  const hasBall =
+    explicitHasBall ||
+    (
+      ownerId !== null &&
+      player.id === ownerId
+    );
 
   if (hasBall) {
     return evaluateWithBall(
@@ -1960,13 +2573,12 @@ function evaluatePlayer(
     teammates,
     opponents,
     ball,
-    side,
-    teamInstructions
+    side
   );
 }
 
 // ============================================================
-// TEAM EVALUATION
+// TEAM
 // ============================================================
 
 function evaluateTeam(
@@ -1977,13 +2589,19 @@ function evaluateTeam(
   teamInstructions = {},
   possession = null
 ) {
+  const playerList =
+    toPlayerArray(players);
+
+  const opponentList =
+    toPlayerArray(opponents);
+
   const decisions = {};
 
-  for (const player of players) {
+  for (const player of playerList) {
     if (!player) continue;
 
     const teammates =
-      players.filter(
+      playerList.filter(
         (teammate) =>
           teammate &&
           teammate.id !== player.id &&
@@ -1991,7 +2609,7 @@ function evaluateTeam(
       );
 
     const activeOpponents =
-      (opponents || []).filter(
+      opponentList.filter(
         (opponent) =>
           opponent &&
           opponent.onPitch !== false
@@ -2008,8 +2626,10 @@ function evaluateTeam(
         possession
       );
 
-    decisions[player.id] =
-      decision;
+    if (player.id !== undefined) {
+      decisions[player.id] =
+        decision;
+    }
   }
 
   return decisions;
@@ -2027,9 +2647,12 @@ function evaluateTeamDebug(
   teamInstructions = {},
   possession = null
 ) {
+  const playerList =
+    toPlayerArray(players);
+
   const decisions =
     evaluateTeam(
-      players,
+      playerList,
       opponents,
       ball,
       side,
@@ -2039,88 +2662,103 @@ function evaluateTeamDebug(
 
   return {
     side,
+
     possession,
+
     decisions,
-    players: players.map(
-      (player) => ({
-        playerId: player.id,
-        name:
-          player.name ??
-          player.fullName ??
-          player.id,
 
-        rawRole:
-          player.role ??
-          player.assignedRole ??
-          player.primaryRole ??
-          null,
+    players:
+      playerList.map(
+        (player) => ({
+          playerId:
+            player.id,
 
-        normalizedRole:
-          getRole(player),
+          name:
+            player.name ??
+            player.fullName ??
+            player.id,
 
-        attributes: {
-          passaggi: Math.round(
-            getAttribute(
-              player,
-              "passaggi"
-            ) * 99
-          ),
+          rawRole:
+            player.role ??
+            player.assignedRole ??
+            player.primaryRole ??
+            null,
 
-          tecnica: Math.round(
-            getAttribute(
-              player,
-              "tecnica"
-            ) * 99
-          ),
+          normalizedRole:
+            getRole(player),
 
-          dribbling: Math.round(
-            getAttribute(
-              player,
-              "dribbling"
-            ) * 99
-          ),
+          attributes: {
+            passaggi:
+              Math.round(
+                getAttribute(
+                  player,
+                  "passaggi"
+                ) * 99
+              ),
 
-          tiro: Math.round(
-            getAttribute(
-              player,
-              "tiro"
-            ) * 99
-          ),
+            tecnica:
+              Math.round(
+                getAttribute(
+                  player,
+                  "tecnica"
+                ) * 99
+              ),
 
-          finalizzazione: Math.round(
-            getAttribute(
-              player,
-              "finalizzazione"
-            ) * 99
-          ),
+            dribbling:
+              Math.round(
+                getAttribute(
+                  player,
+                  "dribbling"
+                ) * 99
+              ),
 
-          decisioni: Math.round(
-            getAttribute(
-              player,
-              "decisioni"
-            ) * 99
-          ),
+            tiro:
+              Math.round(
+                getAttribute(
+                  player,
+                  "tiro"
+                ) * 99
+              ),
 
-          visione: Math.round(
-            getAttribute(
-              player,
-              "visione"
-            ) * 99
-          ),
+            finalizzazione:
+              Math.round(
+                getAttribute(
+                  player,
+                  "finalizzazione"
+                ) * 99
+              ),
 
-          posizionamento: Math.round(
-            getAttribute(
-              player,
-              "posizionamento"
-            ) * 99
-          ),
-        },
+            decisioni:
+              Math.round(
+                getAttribute(
+                  player,
+                  "decisioni"
+                ) * 99
+              ),
 
-        decision:
-          decisions[player.id] ||
-          null,
-      })
-    ),
+            visione:
+              Math.round(
+                getAttribute(
+                  player,
+                  "visione"
+                ) * 99
+              ),
+
+            posizionamento:
+              Math.round(
+                getAttribute(
+                  player,
+                  "posizionamento"
+                ) * 99
+              ),
+          },
+
+          decision:
+            decisions[
+              player.id
+            ] ?? null,
+        })
+      ),
   };
 }
 
