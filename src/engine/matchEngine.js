@@ -497,16 +497,153 @@ export class MatchEngine {
   processTick(
     clockEvent
   ) {
-    this.syncClockState();
+    processTick(clockEvent) {
+  this.syncClockState();
 
-    if (
-      this.state.phase ===
-      MATCH_PHASES.KICKOFF
-    ) {
-      this.state.phase =
-        MATCH_PHASES.OPEN_PLAY;
-    }
+  /**
+   * KICKOFF -> OPEN PLAY
+   */
+  if (
+    this.state.phase ===
+    MATCH_PHASES.KICKOFF
+  ) {
+    this.state.phase =
+      MATCH_PHASES.OPEN_PLAY;
+  }
 
+
+  /**
+   * GIOCATORI ATTIVI
+   */
+  const homePlayers =
+    this.getActivePlayers(
+      this.state.teams.home
+    );
+
+  const awayPlayers =
+    this.getActivePlayers(
+      this.state.teams.away
+    );
+
+
+  /**
+   * PRIMO POSSESSO
+   */
+  if (
+    this.state.possession ===
+      POSSESSION.NONE &&
+    this.tick === 1
+  ) {
+    this.initializePossession();
+  }
+
+
+  /**
+   * MOVIMENTO
+   *
+   * La palla viene passata
+   * direttamente al sistema
+   * di movimento.
+   */
+  updateAllPlayerMovement({
+    homePlayers,
+
+    awayPlayers,
+
+    ball:
+      this.state.ball,
+
+    deltaSimulationSeconds:
+      clockEvent.simulatedSeconds,
+  });
+
+
+  /**
+   * SPAZIAL GRID
+   *
+   * Dopo il movimento ricalcoliamo
+   * lo spazio.
+   */
+  this.updateSpatialState();
+
+
+  /**
+   * PALLA CONTESA
+   */
+  if (
+    this.state.possession ===
+    POSSESSION.CONTESTED
+  ) {
+    this.resolveContestedBall();
+  }
+
+
+  /**
+   * UTILITY AI
+   */
+  this.calculateDecisions();
+
+
+  /**
+   * POSSESSO
+   */
+  if (
+    this.state.possession ===
+      POSSESSION.HOME ||
+    this.state.possession ===
+      POSSESSION.AWAY
+  ) {
+    processPossession({
+      state:
+        this.state,
+
+      rng:
+        this.rng,
+
+      emitEvent:
+        (eventData) =>
+          this.emitEvent(
+            this.createEvent(
+              eventData.type,
+              eventData
+            )
+          ),
+    });
+  }
+
+
+  /**
+   * RICALCOLO SPAZIO
+   *
+   * Dopo l'azione della palla
+   * aggiorniamo nuovamente
+   * l'influenza territoriale.
+   */
+  this.updateSpatialState();
+
+
+  /**
+   * EVENTO TICK
+   */
+  this.emitEvent(
+    this.createEvent(
+      "ENGINE_TICK",
+      {
+        payload: {
+          simulatedSeconds:
+            clockEvent
+              .simulatedSeconds,
+
+          speed:
+            this.clock.speed,
+
+          tick:
+            this.tick,
+        },
+      }
+    )
+  );
+}
     /**
      * Giocatori attivi.
      */
