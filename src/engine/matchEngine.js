@@ -1,16 +1,36 @@
 /**
  * MATCH ENGINE
  *
- * Coordina:
+ * Cuore della simulazione della partita.
  *
- * Clock
+ * Responsabilità:
+ * - clock
+ * - world state
+ * - inizializzazione partita
+ * - possesso
+ * - Utility AI
+ * - movimento
+ * - spatial grid
+ * - eventi
+ * - stato runtime dei giocatori
+ *
+ * ARCHITETTURA:
+ *
+ * React/UI
+ *    ↓
+ * MatchEngine
+ *    ↓
+ * ┌─────────────────────────────┐
+ * │ Utility AI                  │
+ * │ Movement                    │
+ * │ Possession                  │
+ * │ Spatial Grid                │
+ * │ Event System                │
+ * └─────────────────────────────┘
+ *    ↓
  * World State
- * Tactical State
- * Spatial Grid
- * Utility AI
- * Possession
- * Movement
- * Event Log
+ *    ↓
+ * Phaser Renderer
  */
 
 import {
@@ -58,12 +78,134 @@ import {
 } from "./movement/playerMovement.js";
 
 
+/* =========================================================
+   COSTANTI
+   ========================================================= */
+
+const FIELD_MIN = 0.025;
+const FIELD_MAX = 0.975;
+
+const CENTER_X = 0.5;
+const CENTER_Y = 0.5;
+
+
+/* =========================================================
+   UTILITY
+   ========================================================= */
+
+function clamp(
+  value,
+  min = FIELD_MIN,
+  max = FIELD_MAX
+) {
+  if (!Number.isFinite(value)) {
+    return (min + max) / 2;
+  }
+
+  return Math.max(
+    min,
+    Math.min(max, value)
+  );
+}
+
+
+/**
+ * Converte coordinate provenienti
+ * da vecchi sistemi 0-100
+ * al nuovo sistema runtime 0-1.
+ *
+ * Esempi:
+ *
+ * 50 -> 0.5
+ * 25 -> 0.25
+ * 0.8 -> 0.8
+ */
+function normalizeCoordinate(
+  value
+) {
+  if (!Number.isFinite(value)) {
+    return 0.5;
+  }
+
+  if (value > 1) {
+    return value / 100;
+  }
+
+  return value;
+}
+
+
+function normalizePosition(
+  position,
+  fallback = {
+    x: 0.5,
+    y: 0.5,
+  }
+) {
+  if (!position) {
+    return {
+      x: fallback.x,
+      y: fallback.y,
+    };
+  }
+
+  return {
+    x: clamp(
+      normalizeCoordinate(
+        position.x
+      )
+    ),
+
+    y: clamp(
+      normalizeCoordinate(
+        position.y
+      )
+    ),
+  };
+}
+
+
+function distance(
+  a,
+  b
+) {
+  const dx =
+    (a?.x ?? 0) -
+    (b?.x ?? 0);
+
+  const dy =
+    (a?.y ?? 0) -
+    (b?.y ?? 0);
+
+  return Math.sqrt(
+    dx * dx +
+    dy * dy
+  );
+}
+
+
+function isValidSide(
+  side
+) {
+  return (
+    side === "home" ||
+    side === "away"
+  );
+}
+
+
+/* =========================================================
+   MATCH ENGINE
+   ========================================================= */
+
 export class MatchEngine {
+
   constructor({
     homeTeam,
     awayTeam,
     seed = null,
   } = {}) {
+
     if (!homeTeam) {
       throw new Error(
         "MatchEngine: homeTeam è obbligatoria."
@@ -76,30 +218,65 @@ export class MatchEngine {
       );
     }
 
+
+    /* -----------------------------------------------------
+       SEED
+       ----------------------------------------------------- */
+
     this.seed =
       seed ??
       createMatchSeed();
 
+
     this.rng =
-      new RNG(this.seed);
+      new RNG(
+        this.seed
+      );
+
+
+    /* -----------------------------------------------------
+       CLOCK
+       ----------------------------------------------------- */
 
     this.clock =
       new MatchClock();
+
+
+    /* -----------------------------------------------------
+       WORLD STATE
+       ----------------------------------------------------- */
 
     this.state =
       createMatchState({
         homeTeam,
         awayTeam,
-        seed: this.seed,
+        seed:
+          this.seed,
       });
+
+
+    /* -----------------------------------------------------
+       EVENT LOG
+       ----------------------------------------------------- */
 
     this.eventLog =
       createEventLog();
 
+
+    /* -----------------------------------------------------
+       SPATIAL GRID
+       ----------------------------------------------------- */
+
     this.spatialGrid =
       createSpatialGrid();
 
+
+    /* -----------------------------------------------------
+       TACTICAL INSTRUCTIONS
+       ----------------------------------------------------- */
+
     this.tacticalInstructions = {
+
       home:
         createTacticalInstructions({
           team:
@@ -113,70 +290,151 @@ export class MatchEngine {
             awayTeam.tactics ??
             {},
         }),
+
     };
 
+
+    /* -----------------------------------------------------
+       RUNTIME
+       ----------------------------------------------------- */
+
     this.running = false;
+
+    this.tick = 0;
 
     this.listeners =
       new Set();
 
-    this.tick = 0;
 
     /**
-     * Decisioni correnti generate dall'Utility AI.
+     * Decisioni AI del tick corrente.
      *
-     * Indicizzate per playerId per permettere agli altri
-     * sistemi del Match Engine di utilizzare esattamente
-     * la decisione calcolata nel tick corrente.
+     * playerId -> decision
      */
     this.aiDecisions = {};
 
+
     /**
-     * Preparazione runtime
-     * dei giocatori.
+     * ID del possessore corrente.
+     *
+     * Non sostituisce state.possession:
+     * è solo una cache runtime.
+     */
+    this.currentBallOwnerId =
+      null;
+
+
+    /**
+     * Inizializzazione giocatori.
      */
     this.prepareRuntimePlayers(
-      homeTeam
+      homeTeam,
+      "home"
     );
 
     this.prepareRuntimePlayers(
-      awayTeam
+      awayTeam,
+      "away"
     );
+
+
+    /**
+     * Stato iniziale.
+     */
+    this.initializeRuntimeState();
 
     this.syncRuntimeState();
   }
 
 
-  /**
-   * Prepara posizione e target
-   * di ogni giocatore.
-   */
-  prepareRuntimePlayers(team) {
-    if (!team?.players) {
+  /* =======================================================
+     PLAYER RUNTIME
+     ======================================================= */
+
+  prepareRuntimePlayers(
+    team,
+    side
+  ) {
+    if (
+      !team ||
+      !Array.isArray(
+        team.players
+      )
+    ) {
       return;
     }
+
+
+    const startingXI =
+      Array.isArray(
+        team.startingXI
+      )
+        ? team.startingXI
+        : [];
+
+
+    const startingIds =
+      new Set(
+        startingXI
+          .map(
+            (reference) =>
+              typeof reference ===
+              "string"
+                ? reference
+                : reference?.id
+          )
+          .filter(Boolean)
+      );
+
 
     const shape =
       team.inPossessionShape ??
       team.outOfPossessionShape ??
       null;
 
-    const startingXI =
-      team.startingXI ?? [];
 
     for (
       let index = 0;
       index <
-        team.players.length;
+      team.players.length;
       index += 1
     ) {
+
       const player =
         team.players[index];
+
 
       if (!player) {
         continue;
       }
 
+
+      /**
+       * Il ruolo runtime viene sempre
+       * ricavato da primaryRole.
+       */
+      player.role =
+        player.role ??
+        player.assignedRole ??
+        player.primaryRole ??
+        null;
+
+
+      player.primaryRole =
+        player.primaryRole ??
+        player.role ??
+        null;
+
+
+      player.assignedRole =
+        player.assignedRole ??
+        player.primaryRole ??
+        null;
+
+
+      /**
+       * Cerchiamo posizione tattica.
+       */
       const tacticalPosition =
         shape?.positions?.[
           `slot_${index}`
@@ -186,141 +444,65 @@ export class MatchEngine {
         ] ??
         null;
 
+
       let initialPosition =
-        tacticalPosition
-          ? {
-              x:
-                tacticalPosition.x,
-
-              y:
-                tacticalPosition.y,
-            }
-          : null;
-
-      if (
-        !initialPosition
-      ) {
-        const runtimePosition =
-          player.currentState
-            ?.position;
-
-        if (
-          runtimePosition &&
-          Number.isFinite(
-            runtimePosition.x
-          ) &&
-          Number.isFinite(
-            runtimePosition.y
-          )
-        ) {
-          initialPosition = {
+        normalizePosition(
+          tacticalPosition,
+          {
             x:
-              runtimePosition.x,
+              0.15 +
+              (
+                index % 5
+              ) * 0.17,
 
             y:
-              runtimePosition.y,
-          };
+              0.20 +
+              Math.floor(
+                index / 5
+              ) * 0.20,
+          }
+        );
+
+
+      /**
+       * Se non esiste una posizione
+       * tattica, usiamo quella salvata
+       * dal player model.
+       */
+      if (!tacticalPosition) {
+
+        const savedPosition =
+          player.position ??
+          player.currentState?.position ??
+          player.matchState?.actualPosition ??
+          null;
+
+
+        if (savedPosition) {
+          initialPosition =
+            normalizePosition(
+              savedPosition,
+              initialPosition
+            );
         }
       }
 
+
       /**
-       * Fallback.
+       * Posizione runtime.
        */
-      if (
-        !initialPosition
-      ) {
-        initialPosition = {
-          x:
-            0.15 +
-            (
-              index %
-              5
-            ) *
-              0.16,
-
-          y:
-            0.20 +
-            (
-              Math.floor(
-                index / 5
-              )
-            ) *
-              0.20,
-        };
-      }
-
-      initialPosition.x =
-        Math.max(
-          0.03,
-          Math.min(
-            0.97,
-            initialPosition.x
-          )
-        );
-
-      initialPosition.y =
-        Math.max(
-          0.03,
-          Math.min(
-            0.97,
-            initialPosition.y
-          )
-        );
-
       player.position = {
         x:
-          initialPosition.x,
+          clamp(
+            initialPosition.x
+          ),
 
         y:
-          initialPosition.y,
+          clamp(
+            initialPosition.y
+          ),
       };
 
-      player.targetPosition = {
-        x:
-          initialPosition.x,
-
-        y:
-          initialPosition.y,
-      };
-
-      player.velocity = {
-        x: 0,
-        y: 0,
-      };
-    }
-
-    /**
-     * Garantiamo che i titolari
-     * abbiano un target.
-     */
-    for (
-      let index = 0;
-      index <
-        startingXI.length;
-      index += 1
-    ) {
-      const reference =
-        startingXI[index];
-
-      const player =
-        typeof reference ===
-        "string"
-          ? team.players.find(
-              (item) =>
-                item.id ===
-                reference
-            )
-          : reference;
-
-      if (!player) {
-        continue;
-      }
-
-      if (
-        player.targetPosition
-      ) {
-        continue;
-      }
 
       player.targetPosition = {
         x:
@@ -329,17 +511,163 @@ export class MatchEngine {
         y:
           player.position.y,
       };
+
+
+      player.velocity = {
+        x: 0,
+        y: 0,
+      };
+
+
+      /**
+       * Runtime match state.
+       */
+      player.hasBall = false;
+
+      player.intent =
+        "hold_position";
+
+      player.currentAction =
+        "idle";
+
+
+      /**
+       * Stato compatibile con
+       * playerModel.
+       */
+      player.matchState =
+        player.matchState ??
+        {};
+
+
+      player.matchState.onPitch =
+        startingIds.has(
+          player.id
+        );
+
+      player.matchState.substituted =
+        false;
+
+      player.matchState.injured =
+        false;
+
+      player.matchState.hasBall =
+        false;
+
+      player.matchState.currentAction =
+        "idle";
+
+      player.matchState.intent =
+        "hold_position";
+
+      player.matchState.actualPosition = {
+        x:
+          player.position.x,
+
+        y:
+          player.position.y,
+      };
+
+      player.matchState.targetPosition = {
+        x:
+          player.targetPosition.x,
+
+        y:
+          player.targetPosition.y,
+      };
+
+      player.matchState.velocity = {
+        x: 0,
+        y: 0,
+      };
+
+
+      /**
+       * Informazioni lato squadra.
+       */
+      player.side =
+        side;
+
+
+      /**
+       * Le riserve non partecipano
+       * alla simulazione.
+       */
+      player.onPitch =
+        startingIds.has(
+          player.id
+        );
     }
   }
 
 
-  /**
-   * Avvia la partita.
-   */
+  /* =======================================================
+     INITIAL RUNTIME STATE
+     ======================================================= */
+
+  initializeRuntimeState() {
+
+    /**
+     * Il world state usa inizialmente
+     * coordinate 0-100 per la palla.
+     *
+     * Da questo momento il runtime
+     * utilizza esclusivamente 0-1.
+     */
+    this.state.ball.x =
+      CENTER_X;
+
+    this.state.ball.y =
+      CENTER_Y;
+
+    this.state.ball.targetX =
+      CENTER_X;
+
+    this.state.ball.targetY =
+      CENTER_Y;
+
+    this.state.ball.velocityX =
+      0;
+
+    this.state.ball.velocityY =
+      0;
+
+    this.state.ball.ownerId =
+      null;
+
+    this.state.ball.lastTouchPlayerId =
+      null;
+
+    this.state.ball.state =
+      "free";
+
+
+    this.state.possession =
+      POSSESSION.NONE;
+
+
+    this.state.timeSeconds =
+      0;
+
+
+    this.currentBallOwnerId =
+      null;
+
+
+    this.syncPlayerRuntimeFlags();
+  }
+
+
+  /* =======================================================
+     START
+     ======================================================= */
+
   start() {
+
     if (this.running) {
       return;
     }
+
 
     if (
       this.state.matchStatus
@@ -348,15 +676,33 @@ export class MatchEngine {
       return;
     }
 
+
     this.running = true;
 
+
     this.clock.resume();
+
 
     this.state.phase =
       MATCH_PHASES.KICKOFF;
 
+
     this.state.matchStatus.started =
       true;
+
+
+    /**
+     * Possesso iniziale.
+     *
+     * IMPORTANTE:
+     * viene assegnato PRIMA del primo
+     * normale tick di gioco.
+     */
+    this.initializePossession();
+
+
+    this.syncRuntimeState();
+
 
     this.emitEvent(
       this.createEvent(
@@ -365,6 +711,12 @@ export class MatchEngine {
           payload: {
             seed:
               this.seed,
+
+            possession:
+              this.state.possession,
+
+            ballOwnerId:
+              this.state.ball.ownerId,
           },
         }
       )
@@ -372,14 +724,16 @@ export class MatchEngine {
   }
 
 
-  /**
-   * Ferma temporaneamente
-   * il motore.
-   */
+  /* =======================================================
+     STOP
+     ======================================================= */
+
   stop() {
+
     this.running = false;
 
     this.clock.pause();
+
 
     if (
       !this.state.matchStatus
@@ -391,10 +745,12 @@ export class MatchEngine {
   }
 
 
-  /**
-   * Pausa partita.
-   */
+  /* =======================================================
+     PAUSE
+     ======================================================= */
+
   pause() {
+
     if (
       this.state.matchStatus
         .finished
@@ -402,20 +758,27 @@ export class MatchEngine {
       return;
     }
 
+
     this.clock.pause();
+
 
     this.state.phase =
       MATCH_PHASES.PAUSED;
 
-    this.state.tacticalPause =
-      true;
+
+    this.state.tacticalPause = {
+      ...(this.state.tacticalPause ?? {}),
+      active: true,
+    };
   }
 
 
-  /**
-   * Riprende partita.
-   */
+  /* =======================================================
+     RESUME
+     ======================================================= */
+
   resume() {
+
     if (
       this.state.matchStatus
         .finished
@@ -423,7 +786,9 @@ export class MatchEngine {
       return;
     }
 
+
     this.clock.resume();
+
 
     if (
       this.state.phase ===
@@ -433,17 +798,25 @@ export class MatchEngine {
         MATCH_PHASES.OPEN_PLAY;
     }
 
-    this.state.tacticalPause =
-      false;
+
+    this.state.tacticalPause = {
+      ...(this.state.tacticalPause ?? {}),
+      active: false,
+    };
+
 
     this.running = true;
   }
 
 
-  /**
-   * Cambia velocità.
-   */
-  setSpeed(speed) {
+  /* =======================================================
+     SPEED
+     ======================================================= */
+
+  setSpeed(
+    speed
+  ) {
+
     this.clock.setSpeed(
       speed
     );
@@ -452,13 +825,18 @@ export class MatchEngine {
   }
 
 
-  /**
-   * Aggiornamento principale.
-   */
-  update(deltaMs) {
+  /* =======================================================
+     MAIN UPDATE
+     ======================================================= */
+
+  update(
+    deltaMs
+  ) {
+
     if (!this.running) {
       return;
     }
+
 
     if (
       this.state.matchStatus
@@ -467,69 +845,69 @@ export class MatchEngine {
       return;
     }
 
+
     const clockEvents =
       this.clock.update(
         deltaMs
       );
 
+
     for (
       const clockEvent
       of clockEvents
     ) {
+
       if (
         clockEvent.type ===
         "ENGINE_TICK"
       ) {
+
         this.tick += 1;
+
 
         this.processTick(
           clockEvent
         );
       }
 
+
       else if (
         clockEvent.type ===
         "HALF_TIME"
       ) {
+
         this.processHalfTime(
           clockEvent
         );
       }
 
+
       else if (
         clockEvent.type ===
         "FULL_TIME"
       ) {
+
         this.processFullTime(
           clockEvent
         );
       }
     }
 
+
     this.syncRuntimeState();
   }
 
 
-  /**
-   * =========================================================
-   * PROCESS TICK
-   * =========================================================
-   *
-   * Ordine:
-   *
-   * 1. cambio fase
-   * 2. giocatori attivi
-   * 3. primo possesso
-   * 4. movimento
-   * 5. spatial grid
-   * 6. palla contesa
-   * 7. Utility AI
-   * 8. possesso/passaggio
-   * 9. nuova spatial grid
-   * 10. evento tick
-   */
-  processTick(clockEvent) {
+  /* =======================================================
+     PROCESS TICK
+     ======================================================= */
+
+  processTick(
+    clockEvent
+  ) {
+
     this.syncClockState();
+
 
     /**
      * KICKOFF -> OPEN PLAY
@@ -544,7 +922,7 @@ export class MatchEngine {
 
 
     /**
-     * GIOCATORI ATTIVI
+     * Giocatori attivi.
      */
     const homePlayers =
       this.getActivePlayers(
@@ -558,26 +936,27 @@ export class MatchEngine {
 
 
     /**
-     * PRIMO POSSESSO
+     * Se per qualsiasi motivo
+     * il possesso è stato perso,
+     * proviamo a recuperarlo.
+     *
+     * Non lasciamo mai la partita
+     * bloccata permanentemente su NONE
+     * durante open play.
      */
     if (
-      this.state.possession ===
-        POSSESSION.NONE &&
-      this.tick === 1
+      (
+        this.state.possession ===
+        POSSESSION.NONE
+      ) &&
+      this.tick > 1
     ) {
-      this.initializePossession();
+      this.recoverPossession();
     }
 
 
     /**
-     * MOVIMENTO PROGRESSIVO
-     *
-     * I giocatori non vengono
-     * teletrasportati.
-     *
-     * Il movimento avviene
-     * progressivamente verso
-     * il target.
+     * Movimento.
      */
     updateAllPlayerMovement({
       homePlayers,
@@ -588,106 +967,101 @@ export class MatchEngine {
         this.state.ball,
 
       deltaSimulationSeconds:
-        clockEvent
-          .simulatedSeconds,
+        clockEvent.simulatedSeconds,
     });
 
 
     /**
-     * SPATIAL GRID
-     *
-     * Aggiorniamo spazio,
-     * pressione e influenza
-     * dopo il movimento.
+     * Spatial grid.
      */
     this.updateSpatialState();
 
 
     /**
-     * PALLA CONTESA
+     * Palla contesa.
      */
     if (
       this.state.possession ===
       POSSESSION.CONTESTED
     ) {
+
       this.resolveContestedBall();
     }
 
 
     /**
-     * UTILITY AI
+     * Utility AI.
      */
     this.calculateDecisions();
 
 
     /**
-     * POSSESSO
+     * Possession System.
      *
-     * La possession system
-     * può produrre:
+     * La callback supporta entrambi
+     * i formati:
      *
-     * PASS_ATTEMPT
-     * PASS_COMPLETE
-     * RECEIVE
-     * PASS_INTERCEPTED
-     * POSSESSION_WON
+     * emitEvent(eventObject)
+     *
+     * oppure
+     *
+     * emitEvent(type, payload, causedBy)
      */
     if (
       this.state.possession ===
-        POSSESSION.HOME ||
+      POSSESSION.HOME ||
       this.state.possession ===
-        POSSESSION.AWAY
+      POSSESSION.AWAY
     ) {
+
       processPossession({
+
         state:
           this.state,
 
         rng:
           this.rng,
 
-        /**
-         * Decisioni generate dall'Utility AI
-         * nel tick corrente.
-         */
         decisions:
           this.aiDecisions,
 
-        /**
-         * Contesto spaziale aggiornato.
-         */
         spatialGrid:
           this.spatialGrid,
 
-        /**
-         * Istruzioni tattiche correnti.
-         */
         tacticalInstructions:
           this.tacticalInstructions,
 
         emitEvent:
-          (eventData) =>
-            this.emitEvent(
-              this.createEvent(
-                eventData.type,
-                eventData
-              )
+          (...args) =>
+            this.handlePossessionEvent(
+              ...args
             ),
       });
     }
 
 
     /**
-     * RICALCOLO SPAZIO
-     *
-     * Dopo l'azione della palla
-     * la situazione spaziale può
-     * essere cambiata.
+     * Sincronizziamo sempre
+     * il possessore dopo
+     * l'azione.
+     */
+    this.syncPossessionState();
+
+
+    /**
+     * Spatial grid finale.
      */
     this.updateSpatialState();
 
 
     /**
-     * EVENTO TICK
+     * Runtime flags.
+     */
+    this.syncPlayerRuntimeFlags();
+
+
+    /**
+     * Event tick.
      */
     this.emitEvent(
       this.createEvent(
@@ -695,14 +1069,19 @@ export class MatchEngine {
         {
           payload: {
             simulatedSeconds:
-              clockEvent
-                .simulatedSeconds,
+              clockEvent.simulatedSeconds,
 
             speed:
               this.clock.speed,
 
             tick:
               this.tick,
+
+            possession:
+              this.state.possession,
+
+            ballOwnerId:
+              this.state.ball.ownerId,
           },
         }
       )
@@ -710,12 +1089,12 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * POSSESSO INIZIALE
-   * =========================================================
-   */
+  /* =======================================================
+     POSSESSION INIT
+     ======================================================= */
+
   initializePossession() {
+
     const homePlayers =
       this.getActivePlayers(
         this.state.teams.home
@@ -726,43 +1105,217 @@ export class MatchEngine {
         this.state.teams.away
       );
 
+
+    if (
+      !homePlayers.length &&
+      !awayPlayers.length
+    ) {
+      return;
+    }
+
+
+    /**
+     * Possesso iniziale deterministico.
+     */
     const homeStarts =
       this.rng.chance(
         0.5
       );
 
-    const team =
+
+    const candidates =
       homeStarts
         ? homePlayers
         : awayPlayers;
 
-    if (!team.length) {
-      return;
-    }
-
-    const player =
-      team[0];
 
     const side =
       homeStarts
         ? POSSESSION.HOME
         : POSSESSION.AWAY;
 
-    setPossession({
-      state:
-        this.state,
 
+    if (!candidates.length) {
+
+      const fallbackSide =
+        homeStarts
+          ? POSSESSION.AWAY
+          : POSSESSION.HOME;
+
+      const fallbackPlayers =
+        fallbackSide ===
+        POSSESSION.HOME
+          ? homePlayers
+          : awayPlayers;
+
+
+      if (!fallbackPlayers.length) {
+        return;
+      }
+
+
+      this.assignInitialPossession(
+        fallbackSide,
+        fallbackPlayers[0]
+      );
+
+      return;
+    }
+
+
+    /**
+     * Preferiamo un centrocampista /
+     * giocatore vicino al centro.
+     *
+     * Non scegliamo semplicemente
+     * players[0].
+     */
+    const player =
+      this.selectKickoffPlayer(
+        candidates
+      );
+
+
+    this.assignInitialPossession(
       side,
+      player
+    );
+  }
 
-      playerId:
-        player.id,
-    });
 
+  /* =======================================================
+     KICKOFF PLAYER
+     ======================================================= */
+
+  selectKickoffPlayer(
+    players
+  ) {
+
+    if (!players.length) {
+      return null;
+    }
+
+
+    const midfieldRoles = new Set([
+      "mediano",
+      "mediano_dattesa",
+      "centrocampista_difensivo",
+      "regista_arretrato",
+      "centrocampista",
+      "centrocampista_incursore",
+      "mezzala",
+      "regista",
+      "rifinitore",
+      "trequartista",
+    ]);
+
+
+    const preferred =
+      players.filter(
+        (player) =>
+          midfieldRoles.has(
+            player.role ??
+            player.primaryRole
+          )
+      );
+
+
+    const pool =
+      preferred.length
+        ? preferred
+        : players;
+
+
+    return (
+      pool
+        .slice()
+        .sort(
+          (a, b) =>
+            distance(
+              a.position,
+              {
+                x: CENTER_X,
+                y: CENTER_Y,
+              }
+            ) -
+            distance(
+              b.position,
+              {
+                x: CENTER_X,
+                y: CENTER_Y,
+              }
+            )
+        )[0]
+    );
+  }
+
+
+  /* =======================================================
+     ASSIGN INITIAL POSSESSION
+     ======================================================= */
+
+  assignInitialPossession(
+    side,
+    player
+  ) {
+
+    if (
+      !player ||
+      !isValidSide(
+        side
+      )
+    ) {
+      return;
+    }
+
+
+    /**
+     * Usa la nuova API:
+     *
+     * setPossession(
+     *   state,
+     *   side,
+     *   playerId
+     * )
+     */
+    setPossession(
+      this.state,
+      side,
+      player.id
+    );
+
+
+    /**
+     * Stato palla.
+     */
     this.state.ball.x =
       player.position.x;
 
     this.state.ball.y =
       player.position.y;
+
+    this.state.ball.targetX =
+      player.position.x;
+
+    this.state.ball.targetY =
+      player.position.y;
+
+    this.state.ball.ownerId =
+      player.id;
+
+    this.state.ball.lastTouchPlayerId =
+      player.id;
+
+    this.state.ball.state =
+      "owned";
+
+
+    this.currentBallOwnerId =
+      player.id;
+
+
+    this.syncPlayerRuntimeFlags();
+
 
     this.emitEvent(
       this.createEvent(
@@ -775,6 +1328,9 @@ export class MatchEngine {
           payload: {
             side,
 
+            playerId:
+              player.id,
+
             reason:
               "kickoff",
           },
@@ -784,12 +1340,12 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * PALLA CONTESA
-   * =========================================================
-   */
-  resolveContestedBall() {
+  /* =======================================================
+     RECOVER POSSESSION
+     ======================================================= */
+
+  recoverPossession() {
+
     const allPlayers = [
       ...this.getActivePlayers(
         this.state.teams.home
@@ -800,10 +1356,16 @@ export class MatchEngine {
       ),
     ];
 
+
     if (!allPlayers.length) {
       return;
     }
 
+
+    /**
+     * Prima cerchiamo chi è
+     * vicino alla palla.
+     */
     const ballPosition = {
       x:
         this.state.ball.x,
@@ -812,22 +1374,17 @@ export class MatchEngine {
         this.state.ball.y,
     };
 
-    const nearest =
+
+    const candidates =
       allPlayers
         .map(
           (player) => ({
             player,
 
             distance:
-              Math.sqrt(
-                (
-                  player.position.x -
-                  ballPosition.x
-                ) ** 2 +
-                (
-                  player.position.y -
-                  ballPosition.y
-                ) ** 2
+              distance(
+                player.position,
+                ballPosition
               ),
           })
         )
@@ -835,18 +1392,29 @@ export class MatchEngine {
           (a, b) =>
             a.distance -
             b.distance
-        )[0];
+        );
+
+
+    const nearest =
+      candidates[0];
+
 
     if (!nearest) {
       return;
     }
 
+
+    /**
+     * Solo se ragionevolmente
+     * vicino alla palla.
+     */
     if (
       nearest.distance >
-      0.12
+      0.18
     ) {
       return;
     }
+
 
     const side =
       getPlayerSide(
@@ -854,15 +1422,39 @@ export class MatchEngine {
         nearest.player.id
       );
 
-    setPossession({
-      state:
-        this.state,
 
+    if (
+      !isValidSide(
+        side
+      )
+    ) {
+      return;
+    }
+
+
+    setPossession(
+      this.state,
       side,
+      nearest.player.id
+    );
 
-      playerId:
-        nearest.player.id,
-    });
+
+    this.state.ball.ownerId =
+      nearest.player.id;
+
+    this.state.ball.lastTouchPlayerId =
+      nearest.player.id;
+
+    this.state.ball.state =
+      "owned";
+
+
+    this.currentBallOwnerId =
+      nearest.player.id;
+
+
+    this.syncPlayerRuntimeFlags();
+
 
     this.emitEvent(
       this.createEvent(
@@ -875,6 +1467,140 @@ export class MatchEngine {
           payload: {
             side,
 
+            playerId:
+              nearest.player.id,
+
+            reason:
+              "possession_recovery",
+          },
+        }
+      )
+    );
+  }
+
+
+  /* =======================================================
+     CONTESTED BALL
+     ======================================================= */
+
+  resolveContestedBall() {
+
+    const allPlayers = [
+      ...this.getActivePlayers(
+        this.state.teams.home
+      ),
+
+      ...this.getActivePlayers(
+        this.state.teams.away
+      ),
+    ];
+
+
+    if (!allPlayers.length) {
+      return;
+    }
+
+
+    const ballPosition = {
+      x:
+        this.state.ball.x,
+
+      y:
+        this.state.ball.y,
+    };
+
+
+    const ranked =
+      allPlayers
+        .map(
+          (player) => ({
+            player,
+
+            distance:
+              distance(
+                player.position,
+                ballPosition
+              ),
+          })
+        )
+        .sort(
+          (a, b) =>
+            a.distance -
+            b.distance
+        );
+
+
+    const nearest =
+      ranked[0];
+
+
+    if (!nearest) {
+      return;
+    }
+
+
+    if (
+      nearest.distance >
+      0.12
+    ) {
+      return;
+    }
+
+
+    const side =
+      getPlayerSide(
+        this.state,
+        nearest.player.id
+      );
+
+
+    if (
+      !isValidSide(
+        side
+      )
+    ) {
+      return;
+    }
+
+
+    setPossession(
+      this.state,
+      side,
+      nearest.player.id
+    );
+
+
+    this.state.ball.ownerId =
+      nearest.player.id;
+
+    this.state.ball.lastTouchPlayerId =
+      nearest.player.id;
+
+    this.state.ball.state =
+      "owned";
+
+
+    this.currentBallOwnerId =
+      nearest.player.id;
+
+
+    this.syncPlayerRuntimeFlags();
+
+
+    this.emitEvent(
+      this.createEvent(
+        "POSSESSION_WON",
+        {
+          actors: [
+            nearest.player.id,
+          ],
+
+          payload: {
+            side,
+
+            playerId:
+              nearest.player.id,
+
             reason:
               "contested_ball",
           },
@@ -884,12 +1610,12 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * UTILITY AI
-   * =========================================================
-   */
+  /* =======================================================
+     AI
+     ======================================================= */
+
   calculateDecisions() {
+
     const homePlayers =
       this.getActivePlayers(
         this.state.teams.home
@@ -900,8 +1626,10 @@ export class MatchEngine {
         this.state.teams.away
       );
 
+
     const homeDecisions =
       evaluateTeam({
+
         players:
           homePlayers,
 
@@ -917,10 +1645,15 @@ export class MatchEngine {
         teamInstructions:
           this.tacticalInstructions
             .home.team,
+
+        possession:
+          this.state.possession,
       });
+
 
     const awayDecisions =
       evaluateTeam({
+
         players:
           awayPlayers,
 
@@ -936,37 +1669,52 @@ export class MatchEngine {
         teamInstructions:
           this.tacticalInstructions
             .away.team,
+
+        possession:
+          this.state.possession,
       });
 
 
-    /**
-     * Conserviamo le decisioni per playerId.
-     *
-     * L'Utility AI rimane la fonte della decisione:
-     * gli altri sistemi eseguono quella decisione senza
-     * doverla ricalcolare.
-     */
     this.aiDecisions = {};
 
-    for (const decision of homeDecisions) {
-      if (decision?.playerId) {
-        this.aiDecisions[decision.playerId] = decision;
+
+    for (
+      const decision
+      of homeDecisions
+    ) {
+
+      if (
+        decision?.playerId
+      ) {
+        this.aiDecisions[
+          decision.playerId
+        ] =
+          decision;
       }
     }
 
-    for (const decision of awayDecisions) {
-      if (decision?.playerId) {
-        this.aiDecisions[decision.playerId] = decision;
+
+    for (
+      const decision
+      of awayDecisions
+    ) {
+
+      if (
+        decision?.playerId
+      ) {
+        this.aiDecisions[
+          decision.playerId
+        ] =
+          decision;
       }
     }
 
-    /**
-     * Applichiamo le decisioni.
-     */
+
     this.applyAIDecisions(
       homeDecisions,
       homePlayers
     );
+
 
     this.applyAIDecisions(
       awayDecisions,
@@ -974,14 +1722,13 @@ export class MatchEngine {
     );
 
 
-    /**
-     * DEBUG AI
-     */
     this.state.debug =
       this.state.debug ??
       {};
 
+
     this.state.debug.ai = {
+
       home:
         homeDecisions,
 
@@ -990,19 +1737,25 @@ export class MatchEngine {
 
       tick:
         this.tick,
+
+      possession:
+        this.state.possession,
+
+      ballOwnerId:
+        this.state.ball.ownerId,
     };
   }
 
 
-  /**
-   * =========================================================
-   * APPLICA DECISIONI AI
-   * =========================================================
-   */
+  /* =======================================================
+     APPLY AI
+     ======================================================= */
+
   applyAIDecisions(
     decisions,
     players
   ) {
+
     if (
       !Array.isArray(
         decisions
@@ -1011,10 +1764,12 @@ export class MatchEngine {
       return;
     }
 
+
     for (
       const decision
       of decisions
     ) {
+
       const player =
         players.find(
           (item) =>
@@ -1022,19 +1777,20 @@ export class MatchEngine {
             decision.playerId
         );
 
+
       if (!player) {
         continue;
       }
 
 
-      /**
-       * Conserviamo la decisione completa sul giocatore
-       * per debug e per i sistemi runtime.
-       */
-      player.aiDecision = decision;
+      player.aiDecision =
+        decision;
+
 
       /**
-       * Target deciso dalla AI.
+       * Il possessore deve usare
+       * esclusivamente la decisione
+       * generata per lui.
        */
       if (
         decision.targetPosition &&
@@ -1045,12 +1801,12 @@ export class MatchEngine {
           decision.targetPosition.y
         )
       ) {
+
         player.targetPosition = {
+
           x:
-            Math.max(
-              0.02,
-              Math.min(
-                0.98,
+            clamp(
+              normalizeCoordinate(
                 decision
                   .targetPosition
                   .x
@@ -1058,10 +1814,8 @@ export class MatchEngine {
             ),
 
           y:
-            Math.max(
-              0.02,
-              Math.min(
-                0.98,
+            clamp(
+              normalizeCoordinate(
                 decision
                   .targetPosition
                   .y
@@ -1071,27 +1825,48 @@ export class MatchEngine {
       }
 
 
-      /**
-       * Debug runtime.
-       */
       player.intent =
         decision.action ??
         decision.intent ??
         player.intent;
 
+
       player.currentAction =
         decision.action ??
         player.currentAction;
+
+
+      /**
+       * Mirror nello stato match.
+       */
+      player.matchState =
+        player.matchState ??
+        {};
+
+
+      player.matchState.intent =
+        player.intent;
+
+      player.matchState.currentAction =
+        player.currentAction;
+
+      player.matchState.targetPosition = {
+        x:
+          player.targetPosition.x,
+
+        y:
+          player.targetPosition.y,
+      };
     }
   }
 
 
-  /**
-   * =========================================================
-   * SPATIAL STATE
-   * =========================================================
-   */
+  /* =======================================================
+     SPATIAL STATE
+     ======================================================= */
+
   updateSpatialState() {
+
     const homePlayers =
       this.getActivePlayers(
         this.state.teams.home
@@ -1101,6 +1876,7 @@ export class MatchEngine {
       this.getActivePlayers(
         this.state.teams.away
       );
+
 
     updateSpatialGrid(
       this.spatialGrid,
@@ -1112,51 +1888,133 @@ export class MatchEngine {
       this.state.ball
     );
 
+
     this.state.spatialGrid =
       this.spatialGrid;
   }
 
 
-  /**
-   * =========================================================
-   * GIOCATORI ATTIVI
-   * =========================================================
-   */
-  getActivePlayers(team) {
+  /* =======================================================
+     ACTIVE PLAYERS
+     ======================================================= */
+
+  getActivePlayers(
+    team
+  ) {
+
     if (!team) {
       return [];
     }
 
+
     const startingXI =
-      team.startingXI ?? [];
+      Array.isArray(
+        team.startingXI
+      )
+        ? team.startingXI
+        : [];
+
 
     const players =
       startingXI
         .map(
           (reference) => {
+
             if (
               typeof reference ===
               "string"
             ) {
-              return team.players.find(
-                (player) =>
-                  player.id ===
-                  reference
+
+              return (
+                team.players?.find(
+                  (player) =>
+                    player.id ===
+                    reference
+                ) ??
+                null
               );
             }
+
 
             if (
               reference &&
               typeof reference ===
-                "object"
+              "object"
             ) {
+
+              if (
+                reference.id &&
+                team.players
+              ) {
+
+                return (
+                  team.players.find(
+                    (player) =>
+                      player.id ===
+                      reference.id
+                  ) ??
+                  reference
+                );
+              }
+
+
               return reference;
             }
+
 
             return null;
           }
         )
         .filter(Boolean);
+
+
+    /**
+     * Se la squadra non possiede
+     * startingXI ma ha esattamente
+     * 11 giocatori, usiamoli.
+     *
+     * Evita partite vuote nei test.
+     */
+    if (
+      players.length === 0 &&
+      Array.isArray(
+        team.players
+      ) &&
+      team.players.length > 0
+    ) {
+
+      const fallback =
+        team.players
+          .filter(
+            (player) =>
+              player &&
+              player.onPitch !== false
+          )
+          .slice(
+            0,
+            11
+          );
+
+
+      for (
+        const player
+        of fallback
+      ) {
+
+        player.onPitch =
+          true;
+
+        player.matchState =
+          player.matchState ??
+          {};
+
+        player.matchState.onPitch =
+          true;
+      }
+
+
+      return fallback;
+    }
 
 
     /**
@@ -1166,18 +2024,26 @@ export class MatchEngine {
       const player
       of players
     ) {
-      if (
-        !player.position
-      ) {
+
+      if (!player.position) {
+
         player.position = {
           x: 0.5,
           y: 0.5,
         };
       }
 
+
+      player.position =
+        normalizePosition(
+          player.position
+        );
+
+
       if (
         !player.targetPosition
       ) {
+
         player.targetPosition = {
           x:
             player.position.x,
@@ -1187,30 +2053,328 @@ export class MatchEngine {
         };
       }
 
-      if (
-        !player.velocity
-      ) {
+
+      player.targetPosition =
+        normalizePosition(
+          player.targetPosition,
+          player.position
+        );
+
+
+      if (!player.velocity) {
+
         player.velocity = {
           x: 0,
           y: 0,
         };
       }
+
+
+      player.role =
+        player.role ??
+        player.assignedRole ??
+        player.primaryRole ??
+        null;
+
+
+      player.matchState =
+        player.matchState ??
+        {};
+
+
+      player.matchState.onPitch =
+        true;
     }
+
 
     return players;
   }
 
 
-  /**
-   * =========================================================
-   * INTERVALLO
-   * =========================================================
-   */
+  /* =======================================================
+     POSSESSION SYNC
+     ======================================================= */
+
+  syncPossessionState() {
+
+    const ownerId =
+      this.state.ball?.ownerId ??
+      this.currentBallOwnerId ??
+      null;
+
+
+    if (
+      ownerId
+    ) {
+
+      const side =
+        getPlayerSide(
+          this.state,
+          ownerId
+        );
+
+
+      if (
+        side ===
+        "home"
+      ) {
+
+        this.state.possession =
+          POSSESSION.HOME;
+
+      }
+
+      else if (
+        side ===
+        "away"
+      ) {
+
+        this.state.possession =
+          POSSESSION.AWAY;
+      }
+
+
+      this.currentBallOwnerId =
+        ownerId;
+
+    }
+
+
+    /**
+     * Se il sistema possesso
+     * ha cambiato possession ma non
+     * ha aggiornato ownerId, cerchiamo
+     * il giocatore con hasBall.
+     */
+    if (
+      !this.state.ball.ownerId
+    ) {
+
+      const allPlayers = [
+        ...this.getActivePlayers(
+          this.state.teams.home
+        ),
+
+        ...this.getActivePlayers(
+          this.state.teams.away
+        ),
+      ];
+
+
+      const owner =
+        allPlayers.find(
+          (player) =>
+            player.hasBall === true ||
+            player.matchState?.hasBall ===
+            true
+        );
+
+
+      if (owner) {
+
+        this.state.ball.ownerId =
+          owner.id;
+
+        this.state.ball.lastTouchPlayerId =
+          owner.id;
+
+        this.currentBallOwnerId =
+          owner.id;
+
+        this.state.ball.state =
+          "owned";
+      }
+    }
+
+
+    this.syncPlayerRuntimeFlags();
+  }
+
+
+  /* =======================================================
+     PLAYER FLAGS
+     ======================================================= */
+
+  syncPlayerRuntimeFlags() {
+
+    const allPlayers = [
+      ...this.getActivePlayers(
+        this.state.teams.home
+      ),
+
+      ...this.getActivePlayers(
+        this.state.teams.away
+      ),
+    ];
+
+
+    const ownerId =
+      this.state.ball?.ownerId ??
+      null;
+
+
+    for (
+      const player
+      of allPlayers
+    ) {
+
+      const hasBall =
+        player.id ===
+        ownerId;
+
+
+      player.hasBall =
+        hasBall;
+
+
+      player.matchState =
+        player.matchState ??
+        {};
+
+
+      player.matchState.hasBall =
+        hasBall;
+
+
+      player.matchState.actualPosition = {
+        x:
+          player.position.x,
+
+        y:
+          player.position.y,
+      };
+
+
+      player.matchState.targetPosition = {
+        x:
+          player.targetPosition.x,
+
+        y:
+          player.targetPosition.y,
+      };
+
+
+      player.matchState.velocity = {
+        x:
+          player.velocity.x,
+
+        y:
+          player.velocity.y,
+      };
+    }
+  }
+
+
+  /* =======================================================
+     POSSESSION EVENT BRIDGE
+     ======================================================= */
+
+  handlePossessionEvent(
+    ...args
+  ) {
+
+    /**
+     * Formato:
+     *
+     * emitEvent(eventObject)
+     */
+    if (
+      args.length === 1 &&
+      args[0] &&
+      typeof args[0] ===
+      "object"
+    ) {
+
+      const eventData =
+        args[0];
+
+
+      this.emitEvent(
+        this.createEvent(
+          eventData.type,
+          {
+            actors:
+              eventData.actors ??
+              [],
+
+            causedBy:
+              eventData.causedBy ??
+              null,
+
+            payload:
+              eventData.payload ??
+              {},
+          }
+        )
+      );
+
+
+      return;
+    }
+
+
+    /**
+     * Formato:
+     *
+     * emitEvent(
+     *   type,
+     *   payload,
+     *   causedBy
+     * )
+     */
+    const type =
+      args[0];
+
+
+    if (
+      typeof type !==
+      "string"
+    ) {
+      return;
+    }
+
+
+    const payload =
+      args[1] ??
+      {};
+
+
+    const causedBy =
+      args[2] ??
+      null;
+
+
+    this.emitEvent(
+      this.createEvent(
+        type,
+        {
+          actors:
+            payload.actors ??
+            [],
+
+          causedBy,
+
+          payload,
+        }
+      )
+    );
+  }
+
+
+  /* =======================================================
+     HALF TIME
+     ======================================================= */
+
   processHalfTime(
     clockEvent
   ) {
+
     this.state.phase =
       MATCH_PHASES.HALF_TIME;
+
+
+    this.clock.pause();
+
 
     this.emitEvent(
       this.createEvent(
@@ -1219,6 +2383,9 @@ export class MatchEngine {
           payload: {
             minute:
               clockEvent.minute,
+
+            second:
+              clockEvent.second,
           },
         }
       )
@@ -1226,16 +2393,13 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * FINE PARTITA
-   * =========================================================
-   */
+  /* =======================================================
+     FULL TIME
+     ======================================================= */
+
   processFullTime(
     clockEvent
   ) {
-    this.state.phase =
-      MATCH_PHASES.FULL_TIME;
 
     this.finishMatch(
       clockEvent
@@ -1243,9 +2407,14 @@ export class MatchEngine {
   }
 
 
+  /* =======================================================
+     FINISH
+     ======================================================= */
+
   finishMatch(
     clockEvent = null
   ) {
+
     if (
       this.state.matchStatus
         .finished
@@ -1253,24 +2422,37 @@ export class MatchEngine {
       return;
     }
 
+
     this.running = false;
 
+
     this.clock.pause();
+
 
     this.state.matchStatus.finished =
       true;
 
+
     this.state.phase =
       MATCH_PHASES.FULL_TIME;
+
+
+    this.syncPossessionState();
+
 
     this.emitEvent(
       this.createEvent(
         "FULL_TIME",
         {
           payload: {
+
             minute:
               clockEvent?.minute ??
               this.clock.minute,
+
+            second:
+              clockEvent?.second ??
+              this.clock.second,
 
             score: {
               home:
@@ -1279,6 +2461,12 @@ export class MatchEngine {
               away:
                 this.state.score.away,
             },
+
+            possession:
+              this.state.possession,
+
+            ballOwnerId:
+              this.state.ball.ownerId,
           },
         }
       )
@@ -1286,39 +2474,57 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * CLOCK STATE
-   * =========================================================
-   */
+  /* =======================================================
+     CLOCK
+     ======================================================= */
+
   syncClockState() {
+
+    const clockState =
+      this.clock.getState();
+
+
     this.state.clock = {
-      ...this.clock.getState(),
+      ...clockState,
     };
+
+
+    /**
+     * Compatibilità con sistemi
+     * che usano direttamente
+     * timeSeconds.
+     */
+    this.state.timeSeconds =
+      clockState
+        .totalSimulatedSeconds;
   }
 
 
-  /**
-   * =========================================================
-   * RUNTIME STATE
-   * =========================================================
-   */
+  /* =======================================================
+     RUNTIME STATE
+     ======================================================= */
+
   syncRuntimeState() {
+
     this.syncClockState();
+
 
     this.state.tacticalInstructions =
       this.tacticalInstructions;
 
+
     this.state.spatialGrid =
       this.spatialGrid;
+
+
+    this.syncPossessionState();
   }
 
 
-  /**
-   * =========================================================
-   * EVENT CREATION
-   * =========================================================
-   */
+  /* =======================================================
+     EVENT CREATION
+     ======================================================= */
+
   createEvent(
     type,
     {
@@ -1327,8 +2533,10 @@ export class MatchEngine {
       payload = {},
     } = {}
   ) {
+
     const event =
       createMatchEvent({
+
         matchId:
           this.state.id ??
           "match",
@@ -1337,6 +2545,7 @@ export class MatchEngine {
           this.tick,
 
         matchTime: {
+
           minute:
             this.clock.minute,
 
@@ -1362,7 +2571,7 @@ export class MatchEngine {
 
     /**
      * Campi compatibili
-     * con il log UI.
+     * con il log/debug UI.
      */
     event.matchMinute =
       this.clock.minute;
@@ -1370,58 +2579,67 @@ export class MatchEngine {
     event.matchSecond =
       this.clock.second;
 
+
     /**
-     * Tempo simulato,
-     * NON Date.now().
-     *
-     * Questo è fondamentale
-     * per replay e debug
-     * deterministico.
+     * Tempo simulato.
      */
     event.timestamp =
       this.clock
         .totalSimulatedSeconds;
 
+
     return event;
   }
 
 
-  /**
-   * =========================================================
-   * EMIT EVENT
-   * =========================================================
-   */
-  emitEvent(event) {
+  /* =======================================================
+     EMIT EVENT
+     ======================================================= */
+
+  emitEvent(
+    event
+  ) {
+
+    if (!event) {
+      return;
+    }
+
+
     appendEvent(
       this.eventLog,
       event
     );
+
 
     if (
       Array.isArray(
         this.state.events
       )
     ) {
+
       this.state.events.push(
         event
       );
     }
 
+
     this.state.lastEvent =
       event;
 
 
-    /**
-     * Notifica UI / renderer /
-     * sistemi esterni.
-     */
     for (
       const listener
       of this.listeners
     ) {
+
       try {
-        listener(event);
+
+        listener(
+          event
+        );
+
       } catch (error) {
+
         console.error(
           "MatchEngine listener error:",
           error
@@ -1431,26 +2649,32 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * SUBSCRIBE
-   * =========================================================
-   */
-  subscribe(listener) {
+  /* =======================================================
+     SUBSCRIBE
+     ======================================================= */
+
+  subscribe(
+    listener
+  ) {
+
     if (
       typeof listener !==
       "function"
     ) {
+
       throw new Error(
         "MatchEngine.subscribe: listener deve essere una funzione."
       );
     }
 
+
     this.listeners.add(
       listener
     );
 
+
     return () => {
+
       this.listeners.delete(
         listener
       );
@@ -1458,11 +2682,10 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * GETTERS
-   * =========================================================
-   */
+  /* =======================================================
+     GETTERS
+     ======================================================= */
+
   getState() {
     return this.state;
   }
@@ -1493,30 +2716,55 @@ export class MatchEngine {
   }
 
 
-  /**
-   * =========================================================
-   * TEAM INSTRUCTION
-   * =========================================================
-   */
+  getCurrentBallOwner() {
+
+    return (
+      this.state.ball?.ownerId ??
+      null
+    );
+  }
+
+
+  getCurrentPossession() {
+
+    return (
+      this.state.possession ??
+      POSSESSION.NONE
+    );
+  }
+
+
+  /* =======================================================
+     TEAM INSTRUCTION
+     ======================================================= */
+
   setTeamInstruction(
     side,
     key,
     value
   ) {
+
     if (
-      side !== "home" &&
-      side !== "away"
+      !isValidSide(
+        side
+      )
     ) {
+
       throw new Error(
         `Side non valida: ${side}`
       );
     }
+
 
     this.tacticalInstructions[
       side
     ].team[key] =
       value;
 
+
     this.syncRuntimeState();
   }
 }
+
+
+export default MatchEngine;
