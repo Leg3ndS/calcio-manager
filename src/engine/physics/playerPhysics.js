@@ -1,139 +1,22 @@
-/**
- * PLAYER PHYSICS
- * Deterministic, renderer-independent kinematic model.
- * Coordinates are normalized 0..1.
- */
-
-const FIELD_MIN = 0.025;
-const FIELD_MAX = 0.975;
-const EPSILON = 1e-6;
-
-const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
-const lerp = (a, b, t) => a + (b - a) * t;
-
-function attr(player, group, name, fallback = 50) {
-  const value = player?.attributes?.[group]?.[name] ?? player?.[name];
-  const n = Number(value);
-  return Number.isFinite(n) ? clamp(n, 1, 99) : fallback;
+/** Player Physics V2 - deterministic normalized-field kinematics. */
+const FIELD_MIN=0.025, FIELD_MAX=0.975, EPS=1e-8;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const n=(v,f=50)=>Number.isFinite(Number(v))?clamp(Number(v),1,99):f;
+function attr(p,k){return n(p?.attributes?.physical?.[k]??p?.[k]);}
+export function getPlayerPhysicsProfile(player){
+ const fatigue=clamp(Number(player?.fatigue??0),0,100), fit=clamp((100-fatigue)/100,.40,1);
+ const speed=attr(player,'velocita'), accel=attr(player,'accelerazione'), agility=attr(player,'agilita'), balance=attr(player,'equilibrio'), strength=attr(player,'forza'), stamina=attr(player,'resistenza'), reaction=attr(player,'reattivita');
+ return {speed,acceleration:accel,agility,balance,strength,stamina,reaction,fatigue,fitness:fit,maxSpeed:(.022+speed/99*.055)*fit,accelerationRate:.030+accel/99*.060,decelerationRate:.040+agility/99*.080,turnRate:2+agility/99*6};
 }
-
-function getPhysicalProfile(player) {
-  return {
-    acceleration: attr(player, "physical", "accelerazione"),
-    speed: attr(player, "physical", "velocita"),
-    agility: attr(player, "physical", "agilita"),
-    balance: attr(player, "physical", "equilibrio"),
-    stamina: attr(player, "physical", "resistenza"),
-    strength: attr(player, "physical", "forza"),
-    reaction: attr(player, "physical", "reattivita"),
-  };
+export function ensurePlayerPhysicsState(player){
+ player.physics??={}; player.physics.velocity??={x:0,y:0}; player.physics.acceleration??={x:0,y:0}; player.physics.direction=Number.isFinite(player.physics.direction)?player.physics.direction:0; player.physics.speed=Number.isFinite(player.physics.speed)?player.physics.speed:0; player.physics.stability=Number.isFinite(player.physics.stability)?player.physics.stability:1; return player.physics;
 }
-
-export function getPlayerPhysicsProfile(player) {
-  const p = getPhysicalProfile(player);
-  const fatigue = clamp(Number(player?.fatigue ?? 0), 0, 100);
-  const staminaState = clamp((100 - fatigue) / 100, 0.45, 1);
-
-  return {
-    ...p,
-    fatigue,
-    staminaState,
-    maxSpeed: 0.022 + (p.speed / 99) * 0.055,
-    accelerationRate: 0.030 + (p.acceleration / 99) * 0.060,
-    decelerationRate: 0.040 + (p.agility / 99) * 0.080,
-    turnRate: 2.0 + (p.agility / 99) * 6.0,
-  };
+export function simulatePlayerMotion({player,target,deltaSeconds=.1,desiredSpeedMultiplier=1}){
+ if(!player)return null; const dt=clamp(Number(deltaSeconds)||0,0,.1), ph=ensurePlayerPhysicsState(player), prof=getPlayerPhysicsProfile(player); const cur=player.position??{x:.5,y:.5}, goal=target??cur; const dx=goal.x-cur.x,dy=goal.y-cur.y,d=Math.hypot(dx,dy);
+ let desired={x:0,y:0}; if(d>.0005){const s=Math.min(prof.maxSpeed*clamp(desiredSpeedMultiplier,.15,1.15),d/Math.max(dt,.001));desired={x:dx/d*s,y:dy/d*s};}
+ const cs=Math.hypot(ph.velocity.x,ph.velocity.y), ds=Math.hypot(desired.x,desired.y), rate=ds>=cs?prof.accelerationRate:prof.decelerationRate; const maxDV=rate*dt, dvx=desired.x-ph.velocity.x,dvy=desired.y-ph.velocity.y,dv=Math.hypot(dvx,dvy),blend=dv>maxDV&&dv>EPS?maxDV/dv:1;
+ const oldX=ph.velocity.x,oldY=ph.velocity.y; ph.velocity.x+=dvx*blend; ph.velocity.y+=dvy*blend; const sp=Math.hypot(ph.velocity.x,ph.velocity.y), cap=prof.maxSpeed*clamp(desiredSpeedMultiplier,.15,1.15); if(sp>cap){const q=cap/sp;ph.velocity.x*=q;ph.velocity.y*=q;}
+ const nx=clamp(cur.x+ph.velocity.x*dt,FIELD_MIN,FIELD_MAX),ny=clamp(cur.y+ph.velocity.y*dt,FIELD_MIN,FIELD_MAX); player.position={x:nx,y:ny}; player.velocity={x:(nx-cur.x)/Math.max(dt,.001),y:(ny-cur.y)/Math.max(dt,.001)}; ph.acceleration={x:(ph.velocity.x-oldX)/Math.max(dt,.001),y:(ph.velocity.y-oldY)/Math.max(dt,.001)};ph.speed=Math.hypot(ph.velocity.x,ph.velocity.y);if(ph.speed>.0001)ph.direction=Math.atan2(ph.velocity.y,ph.velocity.x);player.facingDirection=ph.direction;
+ player.runtimeMovement={...(player.runtimeMovement??{}),distanceToTarget:d,speed:ph.speed,maxSpeed:cap,acceleration:Math.hypot(ph.acceleration.x,ph.acceleration.y),direction:ph.direction,fatigueMultiplier:prof.fitness,moving:ph.speed>.0001}; return ph;
 }
-
-export function ensurePlayerPhysicsState(player) {
-  if (!player.physics) {
-    player.physics = {};
-  }
-  player.physics.velocity = player.physics.velocity ?? { x: 0, y: 0 };
-  player.physics.acceleration = player.physics.acceleration ?? { x: 0, y: 0 };
-  player.physics.direction = Number.isFinite(player.physics.direction) ? player.physics.direction : 0;
-  player.physics.speed = Number.isFinite(player.physics.speed) ? player.physics.speed : 0;
-  player.physics.grounded = true;
-  return player.physics;
-}
-
-export function simulatePlayerMotion({
-  player,
-  target,
-  deltaSeconds = 0.1,
-  desiredSpeedMultiplier = 1,
-}) {
-  if (!player) return null;
-
-  const dt = clamp(Number(deltaSeconds) || 0, 0, 0.25);
-  const physics = ensurePlayerPhysicsState(player);
-  const profile = getPlayerPhysicsProfile(player);
-
-  const current = player.position ?? { x: 0.5, y: 0.5 };
-  const goal = target ?? current;
-  const dx = goal.x - current.x;
-  const dy = goal.y - current.y;
-  const distance = Math.hypot(dx, dy);
-
-  const fatigueMultiplier = profile.staminaState;
-  const desiredMax = profile.maxSpeed * clamp(desiredSpeedMultiplier, 0.15, 1.2) * fatigueMultiplier;
-
-  let desiredVX = 0;
-  let desiredVY = 0;
-  if (distance > 0.0005) {
-    desiredVX = (dx / distance) * Math.min(desiredMax, distance / Math.max(dt, 0.001));
-    desiredVY = (dy / distance) * Math.min(desiredMax, distance / Math.max(dt, 0.001));
-  }
-
-  const currentSpeed = Math.hypot(physics.velocity.x, physics.velocity.y);
-  const desiredSpeed = Math.hypot(desiredVX, desiredVY);
-  const rate = desiredSpeed >= currentSpeed ? profile.accelerationRate : profile.decelerationRate;
-
-  const oldVX = physics.velocity.x;
-  const oldVY = physics.velocity.y;
-  const maxDeltaV = rate * dt;
-  const dvx = desiredVX - oldVX;
-  const dvy = desiredVY - oldVY;
-  const dv = Math.hypot(dvx, dvy);
-  const blend = dv > maxDeltaV && dv > EPSILON ? maxDeltaV / dv : 1;
-  physics.velocity.x = oldVX + dvx * blend;
-  physics.velocity.y = oldVY + dvy * blend;
-
-  const nextSpeed = Math.hypot(physics.velocity.x, physics.velocity.y);
-  if (nextSpeed > desiredMax && nextSpeed > EPSILON) {
-    const scale = desiredMax / nextSpeed;
-    physics.velocity.x *= scale;
-    physics.velocity.y *= scale;
-  }
-
-  const moveX = physics.velocity.x * dt;
-  const moveY = physics.velocity.y * dt;
-  const nextX = clamp(current.x + moveX, FIELD_MIN, FIELD_MAX);
-  const nextY = clamp(current.y + moveY, FIELD_MIN, FIELD_MAX);
-
-  player.position = { x: nextX, y: nextY };
-  player.velocity = { x: nextX - current.x, y: nextY - current.y };
-  physics.acceleration = {
-    x: (physics.velocity.x - oldVX) / Math.max(dt, 0.001),
-    y: (physics.velocity.y - oldVY) / Math.max(dt, 0.001),
-  };
-  physics.speed = Math.hypot(physics.velocity.x, physics.velocity.y);
-
-  if (physics.speed > 0.0001) {
-    physics.direction = Math.atan2(physics.velocity.y, physics.velocity.x);
-    player.facingDirection = physics.direction;
-  }
-
-  player.runtimeMovement = {
-    ...(player.runtimeMovement ?? {}),
-    distanceToTarget: distance,
-    speed: physics.speed,
-    maxSpeed: desiredMax,
-    acceleration: Math.hypot(physics.acceleration.x, physics.acceleration.y),
-    direction: physics.direction,
-    fatigueMultiplier,
-    moving: physics.speed > 0.0001,
-  };
-
-  return physics;
-}
+export function applyContactDisplacement({player,other,impulse=.01}){if(!player||!other)return;const dx=player.position.x-other.position.x,dy=player.position.y-other.position.y,d=Math.hypot(dx,dy)||1;const q=Math.max(0,Number(impulse)||0);player.position.x=clamp(player.position.x+dx/d*q,FIELD_MIN,FIELD_MAX);player.position.y=clamp(player.position.y+dy/d*q,FIELD_MIN,FIELD_MAX);}
