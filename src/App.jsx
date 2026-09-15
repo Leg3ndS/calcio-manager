@@ -113,29 +113,46 @@ function calculateLiveStats(events, match) {
     },
   };
 
-  let possessionHome = 0;
-  let possessionAway = 0;
+  let possessionHomeSeconds = 0;
+  let possessionAwaySeconds = 0;
 
   for (const event of events) {
     const side = eventTeam(event, match?.teams);
     const type = String(event?.type ?? "");
+    const payload = event?.payload ?? {};
 
+    // Possession is accumulated from the engine's actual simulated time,
+    // not from the number of ENGINE_TICK events.
     if (type === "ENGINE_TICK") {
-      const possession = event?.payload?.possession ?? event?.possession;
-      if (possession === "home") possessionHome += 1;
-      if (possession === "away") possessionAway += 1;
+      const dt = Number(payload?.deltaSeconds ?? payload?.simulatedDeltaSeconds ?? 0.1);
+      const possession = payload?.possession ?? event?.possession;
+      if (possession === "home") possessionHomeSeconds += dt;
+      if (possession === "away") possessionAwaySeconds += dt;
     }
 
     if (!side || !stats[side]) continue;
 
     if (["SHOT", "SHOT_ATTEMPT", "SHOT_ON_TARGET", "SHOT_OFF_TARGET", "SHOT_BLOCKED", "SHOT_MISSED"].includes(type)) {
       stats[side].shots += 1;
-      if (["SHOT_ON_TARGET", "SAVE", "GOAL"].includes(type)) stats[side].shotsOnTarget += 1;
-      const xg = Number(event?.payload?.xg ?? event?.payload?.expectedGoals ?? 0);
-      if (Number.isFinite(xg)) stats[side].xg += xg;
+
+      const onTarget =
+        type === "SHOT_ON_TARGET" ||
+        payload?.onTarget === true ||
+        payload?.result === "save" ||
+        payload?.result === "goal";
+
+      if (onTarget) stats[side].shotsOnTarget += 1;
+
+      const xg = Number(payload?.xg ?? payload?.expectedGoals ?? 0);
+      if (Number.isFinite(xg) && xg > 0) {
+        stats[side].xg += xg;
+      }
     }
 
-    if (["PASS", "PASS_ATTEMPT"].includes(type)) stats[side].passes += 1;
+    if (["PASS", "PASS_ATTEMPT"].includes(type)) {
+      stats[side].passes += 1;
+    }
+
     if (["PASS_COMPLETED", "PASS_COMPLETE"].includes(type)) {
       stats[side].passesCompleted += 1;
       if (stats[side].passes < stats[side].passesCompleted) {
@@ -143,18 +160,27 @@ function calculateLiveStats(events, match) {
       }
     }
 
-    if (["TACKLE_SUCCESS", "TACKLE_WON"].includes(type)) stats[side].tacklesWon += 1;
-    if (["INTERCEPTION", "PASS_INTERCEPTED"].includes(type)) stats[side].interceptions += 1;
-    if (["FOUL", "FOUL_COMMITTED"].includes(type)) stats[side].fouls += 1;
-    if (type === "CORNER") stats[side].corners += 1;
+    if (["TACKLE_SUCCESS", "TACKLE_WON"].includes(type)) {
+      stats[side].tacklesWon += 1;
+    }
+
+    if (["INTERCEPTION", "PASS_INTERCEPTED"].includes(type)) {
+      stats[side].interceptions += 1;
+    }
+
+    if (["FOUL", "FOUL_COMMITTED"].includes(type)) {
+      stats[side].fouls += 1;
+    }
+
+    if (type === "CORNER") {
+      stats[side].corners += 1;
+    }
   }
 
-  const totalPossession = possessionHome + possessionAway;
-  const homePossession = totalPossession
-    ? Math.round((possessionHome / totalPossession) * 100)
-    : match?.possession === "home"
-      ? 50
-      : 50;
+  const totalPossession = possessionHomeSeconds + possessionAwaySeconds;
+  const homePossession = totalPossession > 0
+    ? Math.round((possessionHomeSeconds / totalPossession) * 100)
+    : 50;
 
   return {
     ...stats,
@@ -163,28 +189,6 @@ function calculateLiveStats(events, match) {
       away: 100 - homePossession,
     },
   };
-}
-
-function StatRow({ label, home, away, format = (v) => v }) {
-  const h = Number(home ?? 0);
-  const a = Number(away ?? 0);
-  const total = h + a;
-  const homeWidth = total > 0 ? Math.max(12, (h / total) * 100) : 50;
-  const awayWidth = total > 0 ? Math.max(12, (a / total) * 100) : 50;
-
-  return (
-    <div className="stat-row">
-      <div className="stat-value stat-value-home">{format(h)}</div>
-      <div className="stat-track">
-        <div className="stat-label">{label}</div>
-        <div className="stat-bars">
-          <span style={{ width: `${homeWidth}%` }} />
-          <span style={{ width: `${awayWidth}%` }} />
-        </div>
-      </div>
-      <div className="stat-value stat-value-away">{format(a)}</div>
-    </div>
-  );
 }
 
 function PitchPreview({ match }) {
@@ -260,7 +264,9 @@ function App() {
   const [events, setEvents] = useState([]);
   const [tab, setTab] = useState("live");
   const [speed, setSpeed] = useState(1);
+  const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState("");
+  const [savedStats, setSavedStats] = useState(null);
 
   useEffect(() => {
     const engine = createTestEngine();
@@ -280,6 +286,7 @@ function App() {
 
     engine.start();
     sync();
+    setSavedStats(calculateLiveStats(fullEventsRef.current, engine.getState()));
 
     let lastTime = performance.now();
 
@@ -288,8 +295,15 @@ function App() {
       lastTime = now;
 
       try {
-        engine.update(delta);
+        if (!isPaused) {
+          engine.update(delta);
+        }
+
         sync();
+
+        // Rebuild the cumulative match statistics from the complete event
+        // history. The UI never uses only the last N events for totals.
+        setSavedStats(calculateLiveStats(fullEventsRef.current, engine.getState()));
       } catch (err) {
         console.error(err);
         setError(err?.message ?? String(err));
@@ -306,12 +320,9 @@ function App() {
       engine.stop();
       engineRef.current = null;
     };
-  }, []);
+  }, [isPaused]);
 
-  const stats = useMemo(
-    () => calculateLiveStats(events, match),
-    [events, match]
-  );
+  const stats = savedStats ?? calculateLiveStats(fullEventsRef.current, match);
 
   const recentEvents = useMemo(
     () => events.filter((event) => EVENT_META[event?.type]).slice().reverse().slice(0, 14),
@@ -351,17 +362,26 @@ function App() {
             </div>
           </div>
 
-          <div className="live-pill">
+          <div className={`live-pill ${isPaused ? "paused-pill" : ""}`}>
             <i />
-            LIVE
+            {isPaused ? "IN PAUSA" : "LIVE"}
           </div>
 
           <button
-            className="icon-button"
-            onClick={() => engineRef.current?.pause()}
-            aria-label="Pausa partita"
+            className={`icon-button ${isPaused ? "resume-button" : ""}`}
+            onClick={() => {
+              if (isPaused) {
+                engineRef.current?.resume?.();
+                setIsPaused(false);
+              } else {
+                engineRef.current?.pause?.();
+                setIsPaused(true);
+              }
+            }}
+            aria-label={isPaused ? "Riprendi partita" : "Metti in pausa"}
+            title={isPaused ? "Riprendi" : "Pausa"}
           >
-            ⏸
+            {isPaused ? "▶" : "⏸"}
           </button>
         </header>
 
@@ -608,7 +628,7 @@ function App() {
                 <div><span>Fase</span><b>{match.phase}</b></div>
                 <div><span>Possesso</span><b>{match.possession}</b></div>
                 <div><span>Velocità</span><b>{clock.speed ?? speed}x</b></div>
-                <div><span>Eventi</span><b>{fullEventsRef.current.length}</b></div>
+                <div><span>Stato</span><b>{isPaused ? "PAUSA" : "LIVE"}</b></div>
               </div>
             </section>
 
