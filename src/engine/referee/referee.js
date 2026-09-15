@@ -4,7 +4,6 @@ const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,Number.isFinite(Number(v))?Number
 const sideOf=(state,p)=>p?.side??(['home','away'].find(s=>(state?.teams?.[s]?.players??[]).some(x=>String(x.id)===String(p?.id)))??null);
 const pos=p=>p?.position??{x:p?.x??.5,y:p?.y??.5};
 const dist=(a,b)=>Math.hypot(pos(a).x-pos(b).x,pos(a).y-pos(b).y);
-const rng01=r=>clamp(typeof r==='function'?r():r?.next?.()??r?.random?.()??Math.random());
 export class Referee{
  constructor(config={},rng=null){this.profile=createReferee(config,config.profile??'balanced');this.rng=rng;}
  setRng(r){this.rng=r;} getSnapshot(){return {...this.profile};}
@@ -16,9 +15,9 @@ export class Referee{
  }
  evaluateContact(state,{tackler,opponent,contact=.5,timing=.5,ballPlay=.5,dangerous=false}={}){
   const strict=this.profile.strictness/100,tol=this.profile.contactTolerance/100,ag=Number(tackler?.attributes?.mental?.aggressivita??50)/99;
-  const base=contact*.34+timing*.25+(1-ballPlay)*.26+ag*.15; const probability=clamp(base*(.55+strict*.75)*(1.2-tol*.35)); const roll=rng01(this.rng); const foul=roll<probability;
+  const base=contact*.34+timing*.25+(1-ballPlay)*.26+ag*.15; const probability=clamp(base*(.55+strict*.75)*(1.2-tol*.35)); const threshold=clamp(.58+tol*.18-strict*.08); const foul=probability>=threshold;
   const severity=contact*.45+timing*.30+(dangerous?.25:0); const foulType=!foul?FOULS.NONE:severity>=.72?FOULS.EXCESSIVE_FORCE:severity>=.48?FOULS.RECKLESS:FOULS.CARELESS;
-  return {type:foul?'FOUL':'NO_FOUL',foulType,probability,roll,tacklerId:tackler?.id??null,opponentId:opponent?.id??null,side:foul?sideOf(state,opponent):null};
+  return {type:foul?'FOUL':'NO_FOUL',foulType,probability,threshold,tacklerId:tackler?.id??null,opponentId:opponent?.id??null,side:foul?sideOf(state,opponent):null};
  }
  decideAdvantage({foul,attackingSide,fieldPosition=.5,forwardProgress=0,space=.5,support=.5,opponentsAhead=1,counterAttack=false}){
   if(!foul||foul.foulType===FOULS.NONE||attackingSide==null)return {played:false,score:0};
