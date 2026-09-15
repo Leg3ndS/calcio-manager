@@ -266,7 +266,6 @@ function App() {
   const [speed, setSpeed] = useState(1);
   const [isPaused, setIsPaused] = useState(false);
   const [error, setError] = useState("");
-  const [savedStats, setSavedStats] = useState(null);
 
   useEffect(() => {
     const engine = createTestEngine();
@@ -286,7 +285,6 @@ function App() {
 
     engine.start();
     sync();
-    setSavedStats(calculateLiveStats(fullEventsRef.current, engine.getState()));
 
     let lastTime = performance.now();
 
@@ -301,9 +299,8 @@ function App() {
 
         sync();
 
-        // Rebuild the cumulative match statistics from the complete event
-        // history. The UI never uses only the last N events for totals.
-        setSavedStats(calculateLiveStats(fullEventsRef.current, engine.getState()));
+        // Statistics are cumulative: always read the complete event history,
+        // never only the last N events shown in the Live/Eventi panel.
       } catch (err) {
         console.error(err);
         setError(err?.message ?? String(err));
@@ -320,9 +317,9 @@ function App() {
       engine.stop();
       engineRef.current = null;
     };
-  }, [isPaused]);
+  }, []);
 
-  const stats = savedStats ?? calculateLiveStats(fullEventsRef.current, match);
+  const stats = calculateLiveStats(fullEventsRef.current, match);
 
   const recentEvents = useMemo(
     () => events.filter((event) => EVENT_META[event?.type]).slice().reverse().slice(0, 14),
@@ -370,13 +367,10 @@ function App() {
           <button
             className={`icon-button ${isPaused ? "resume-button" : ""}`}
             onClick={() => {
-              if (isPaused) {
-                engineRef.current?.resume?.();
-                setIsPaused(false);
-              } else {
-                engineRef.current?.pause?.();
-                setIsPaused(true);
-              }
+              // Pause/resume is controlled by React. We deliberately do not
+              // destroy/recreate the Match Engine, so the exact match state
+              // and clock are preserved.
+              setIsPaused((previous) => !previous);
             }}
             aria-label={isPaused ? "Riprendi partita" : "Metti in pausa"}
             title={isPaused ? "Riprendi" : "Pausa"}
