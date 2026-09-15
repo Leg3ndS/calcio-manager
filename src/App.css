@@ -1068,3 +1068,21 @@ button:focus-visible {
     font-size: 7px;
   }
 }
+
+
+/* Match controls â explicit pause/resume state */
+.icon-button.resume-button {
+  border-color: #5fb879;
+  background: #173120;
+  color: #a7f7bb;
+}
+
+.live-pill.paused-pill {
+  border-color: #5b4930;
+  color: #d5bd91;
+}
+
+.live-pill.paused-pill i {
+  background: #d4a65f;
+  box-shadow: 0 0 0 4px rgba(212, 166, 95, 0.09);
+}
