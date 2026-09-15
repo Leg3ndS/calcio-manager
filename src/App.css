@@ -27,6 +27,11 @@ button {
   font: inherit;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
 button:focus-visible {
   outline: 2px solid #8df2aa;
   outline-offset: 2px;
@@ -66,7 +71,7 @@ button:focus-visible {
   color: #0a110d;
   font-size: 13px;
   font-weight: 900;
-  letter-spacing: -0.5px;
+  letter-spacing: -.5px;
 }
 
 .brand strong,
@@ -105,7 +110,38 @@ button:focus-visible {
   height: 6px;
   border-radius: 50%;
   background: #79e99a;
-  box-shadow: 0 0 0 4px rgba(121, 233, 154, 0.09);
+  box-shadow: 0 0 0 4px rgba(121, 233, 154, .09);
+}
+
+.ready-pill i {
+  background: #94a29a;
+  box-shadow: none;
+}
+
+.paused-pill {
+  border-color: #5b4930;
+  color: #d5bd91;
+}
+
+.paused-pill i {
+  background: #d4a65f;
+  box-shadow: 0 0 0 4px rgba(212, 166, 95, .09);
+}
+
+.finished-pill {
+  border-color: #39463f;
+  color: #9eaaa3;
+}
+
+.finished-pill i {
+  background: #87948c;
+  box-shadow: none;
+}
+
+.header-action {
+  width: 40px;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .icon-button {
@@ -124,7 +160,7 @@ button:focus-visible {
 .placeholder-panel {
   border: 1px solid #1d2923;
   background: linear-gradient(145deg, #101813, #0b110e);
-  box-shadow: 0 16px 45px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 16px 45px rgba(0, 0, 0, .18);
 }
 
 .score-card {
@@ -227,20 +263,68 @@ button:focus-visible {
   font-weight: 800;
 }
 
-.match-controls {
+.match-action-bar {
+  min-height: 57px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
+  justify-content: center;
+  gap: 10px;
+  padding: 9px 16px;
   border-top: 1px solid #1b2620;
   background: #0b110e;
 }
 
-.speed-control,
-.possession-chip {
+.primary-action,
+.secondary-action {
+  min-height: 37px;
+  padding: 8px 15px;
+  border-radius: 9px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .7px;
+}
+
+.primary-action {
+  border: 1px solid #62bf7d;
+  background: #183221;
+  color: #a7f7bb;
+}
+
+.secondary-action {
+  border: 1px solid #2b3b31;
+  background: #101913;
+  color: #93a097;
+}
+
+.primary-action span,
+.secondary-action span {
+  margin-right: 7px;
+}
+
+.final-action {
+  min-height: 37px;
+  display: flex;
+  align-items: center;
+  padding: 8px 15px;
+  border: 1px solid #29372f;
+  border-radius: 9px;
+  color: #89978f;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: .7px;
+}
+
+.final-action span {
+  margin-right: 7px;
+  color: #84d79b;
+}
+
+.speed-control {
   display: flex;
   align-items: center;
   gap: 5px;
+  margin-left: auto;
 }
 
 .speed-control > span {
@@ -269,25 +353,51 @@ button:focus-visible {
   color: #a7f7bb;
 }
 
-.possession-chip {
-  color: #68766f;
+.halftime-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 14px;
+  padding: 17px 20px;
+  border: 1px solid #35452d;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #182219, #101711);
+}
+
+.halftime-banner span {
+  color: #8df2aa;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+}
+
+.halftime-banner h2 {
+  margin: 4px 0 4px;
+  font-size: 19px;
+}
+
+.halftime-banner p {
+  max-width: 600px;
+  margin: 0;
+  color: #748178;
   font-size: 10px;
+  line-height: 1.5;
 }
 
-.possession-chip span {
-  padding: 5px 8px;
-  border-radius: 6px;
-  color: #718078;
+.halftime-score {
+  display: flex;
+  align-items: center;
+  gap: 9px;
 }
 
-.possession-chip span.active {
-  background: #17271e;
-  color: #9df0b3;
+.halftime-score b {
+  font-size: 29px;
 }
 
-.possession-chip em {
-  font-style: normal;
-  color: #4f5b54;
+.halftime-score span {
+  color: #5b685f;
+  font-size: 18px;
 }
 
 .match-layout {
@@ -308,9 +418,7 @@ button:focus-visible {
   padding: 4px 3px 11px;
 }
 
-.section-heading span:first-child,
-.panel-title > div > span,
-.side-title > div > span {
+.section-heading > div > span {
   color: #68766f;
   font-size: 9px;
   font-weight: 900;
@@ -340,46 +448,51 @@ button:focus-visible {
   border: 1px solid #1d2923;
   border-radius: 18px;
   background: #0c130f;
-  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.22);
+  box-shadow: 0 18px 45px rgba(0, 0, 0, .22);
 }
 
-.pitch-placeholder {
+.pitch {
   position: relative;
   width: 100%;
   height: 100%;
   overflow: hidden;
-  border: 2px solid rgba(221, 244, 227, 0.56);
+  border: 2px solid rgba(221, 244, 227, .56);
   border-radius: 10px;
   background:
-    linear-gradient(90deg, rgba(255,255,255,.018) 50%, transparent 50%),
-    repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 12.5%, transparent 12.5% 25%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, .018) 0 12.5%,
+      transparent 12.5% 25%
+    ),
     #1d5b36;
-  background-size: 100% 100%, 100% 100%, 100% 100%;
 }
 
-.pitch-placeholder::before {
+.pitch::before {
   content: "";
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, transparent 49.85%, rgba(241, 252, 244, .72) 50%, transparent 50.15%),
-    radial-gradient(circle at 50% 50%, transparent 0 7.2%, rgba(241,252,244,.7) 7.25% 7.45%, transparent 7.5%),
-    linear-gradient(rgba(255,255,255,.6), rgba(255,255,255,.6)) 0 50% / 3px 3px no-repeat;
+    linear-gradient(
+      90deg,
+      transparent 49.85%,
+      rgba(241, 252, 244, .72) 50%,
+      transparent 50.15%
+    );
   pointer-events: none;
 }
 
-.pitch-mark.center-circle {
+.pitch-circle {
   position: absolute;
   left: 50%;
   top: 50%;
   width: 15%;
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
-  border: 2px solid rgba(241,252,244,.7);
+  border: 2px solid rgba(241, 252, 244, .7);
   border-radius: 50%;
 }
 
-.pitch-mark.center-dot {
+.pitch-center-dot {
   position: absolute;
   left: 50%;
   top: 50%;
@@ -387,16 +500,16 @@ button:focus-visible {
   height: 5px;
   transform: translate(-50%, -50%);
   border-radius: 50%;
-  background: rgba(241,252,244,.9);
+  background: rgba(241, 252, 244, .9);
 }
 
-.half-way {
+.pitch-halfway {
   position: absolute;
   left: 50%;
   top: 0;
   width: 1px;
   height: 100%;
-  background: rgba(241,252,244,.6);
+  background: rgba(241, 252, 244, .6);
 }
 
 .pitch-box {
@@ -404,22 +517,34 @@ button:focus-visible {
   top: 28%;
   width: 15%;
   height: 44%;
-  border: 2px solid rgba(241,252,244,.68);
+  border: 2px solid rgba(241, 252, 244, .68);
 }
 
-.pitch-box-left { left: 0; border-left: 0; }
-.pitch-box-right { right: 0; border-right: 0; }
+.pitch-box-left {
+  left: 0;
+  border-left: 0;
+}
+
+.pitch-box-right {
+  right: 0;
+  border-right: 0;
+}
 
 .pitch-goal {
   position: absolute;
   top: 42%;
   width: 2%;
   height: 16%;
-  border: 2px solid rgba(241,252,244,.7);
+  border: 2px solid rgba(241, 252, 244, .7);
 }
 
-.pitch-goal-left { left: -2%; }
-.pitch-goal-right { right: -2%; }
+.pitch-goal-left {
+  left: -2%;
+}
+
+.pitch-goal-right {
+  right: -2%;
+}
 
 .pitch-player {
   position: absolute;
@@ -429,17 +554,22 @@ button:focus-visible {
   transform: translate(-50%, -50%);
   display: grid;
   place-items: center;
-  border: 2px solid rgba(255,255,255,.84);
+  border: 2px solid rgba(255, 255, 255, .84);
   border-radius: 50%;
-  box-shadow: 0 3px 8px rgba(0,0,0,.3);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .3);
   color: white;
   font-size: 8px;
   font-weight: 900;
   transition: left .12s linear, top .12s linear;
 }
 
-.pitch-player.home { background: #183f91; }
-.pitch-player.away { background: #bd3232; }
+.pitch-player.home {
+  background: #183f91;
+}
+
+.pitch-player.away {
+  background: #bd3232;
+}
 
 .pitch-ball {
   position: absolute;
@@ -450,20 +580,22 @@ button:focus-visible {
   border: 1px solid #18201b;
   border-radius: 50%;
   background: #f5f6ef;
-  box-shadow: 0 0 0 3px rgba(255,255,255,.14), 0 2px 6px rgba(0,0,0,.4);
+  box-shadow:
+    0 0 0 3px rgba(255, 255, 255, .14),
+    0 2px 6px rgba(0, 0, 0, .4);
   transition: left .1s linear, top .1s linear;
 }
 
-.phaser-badge {
+.pitch-label {
   position: absolute;
   right: 9px;
   top: 9px;
   z-index: 10;
   padding: 5px 7px;
-  border: 1px solid rgba(255,255,255,.12);
+  border: 1px solid rgba(255, 255, 255, .12);
   border-radius: 6px;
   background: rgba(4, 13, 8, .46);
-  color: rgba(255,255,255,.58);
+  color: rgba(255, 255, 255, .58);
   font-size: 7px;
   font-weight: 800;
   letter-spacing: .8px;
@@ -547,6 +679,14 @@ button:focus-visible {
   gap: 12px;
 }
 
+.panel-title > div > span,
+.side-title > div > span {
+  color: #68766f;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 1.5px;
+}
+
 .panel-title h3,
 .side-title h3 {
   font-size: 15px;
@@ -595,8 +735,15 @@ button:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-.stat-value-home { color: #a6eab4; text-align: left; }
-.stat-value-away { color: #e2aaaa; text-align: right; }
+.stat-value-home {
+  color: #a6eab4;
+  text-align: left;
+}
+
+.stat-value-away {
+  color: #e2aaaa;
+  text-align: right;
+}
 
 .stat-track {
   min-width: 0;
@@ -622,8 +769,13 @@ button:focus-visible {
   border-radius: 99px;
 }
 
-.stat-bars span:first-child { background: #73c88c; }
-.stat-bars span:last-child { background: #c97979; }
+.stat-bars span:first-child {
+  background: #73c88c;
+}
+
+.stat-bars span:last-child {
+  background: #c97979;
+}
 
 .placeholder-panel {
   min-height: 180px;
@@ -683,14 +835,37 @@ button:focus-visible {
   font-size: 12px;
 }
 
-.event-icon.goal { background: #263c2d; }
-.event-icon.shot { background: #1c2c39; }
-.event-icon.save { background: #1c2933; }
-.event-icon.foul { background: #3b3220; }
-.event-icon.card { background: #4a4020; }
-.event-icon.danger { background: #422727; }
-.event-icon.setpiece { background: #272f25; }
-.event-icon.sub { background: #282538; }
+.event-icon.goal {
+  background: #263c2d;
+}
+
+.event-icon.shot {
+  background: #1c2c39;
+}
+
+.event-icon.save {
+  background: #1c2933;
+}
+
+.event-icon.foul {
+  background: #3b3220;
+}
+
+.event-icon.card {
+  background: #4a4020;
+}
+
+.event-icon.danger {
+  background: #422727;
+}
+
+.event-icon.setpiece {
+  background: #272f25;
+}
+
+.event-icon.sub {
+  background: #282538;
+}
 
 .event-row strong,
 .event-row small,
@@ -867,7 +1042,7 @@ button:focus-visible {
   border: 1px solid #653535;
   border-radius: 11px;
   background: #241313;
-  box-shadow: 0 15px 40px rgba(0,0,0,.4);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, .4);
 }
 
 .engine-error strong {
@@ -880,22 +1055,28 @@ button:focus-visible {
   font-size: 10px;
 }
 
-.loading-screen {
+.loading-screen,
+.fatal-error-screen {
   min-height: 100vh;
   display: grid;
   place-items: center;
+  padding: 20px;
   background: #070b09;
 }
 
-.loading-card {
+.loading-card,
+.fatal-error-card {
+  width: min(620px, 100%);
   text-align: center;
 }
 
-.loading-card .brand-mark {
+.loading-card .brand-mark,
+.fatal-error-card .brand-mark {
   margin: 0 auto 12px;
 }
 
-.loading-card h1 {
+.loading-card h1,
+.fatal-error-card h1 {
   margin: 0;
   font-size: 20px;
 }
@@ -903,6 +1084,39 @@ button:focus-visible {
 .loading-card p {
   color: #647169;
   font-size: 11px;
+}
+
+.fatal-error-card > strong {
+  display: block;
+  margin-top: 10px;
+  color: #ffb1b1;
+  font-size: 12px;
+}
+
+.fatal-error-card pre {
+  max-height: 300px;
+  overflow: auto;
+  margin: 15px 0;
+  padding: 13px;
+  border: 1px solid #472727;
+  border-radius: 10px;
+  background: #170d0d;
+  color: #d49a9a;
+  font: 10px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: left;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.fatal-error-card button {
+  padding: 10px 15px;
+  border: 1px solid #5fb879;
+  border-radius: 9px;
+  background: #173120;
+  color: #a7f7bb;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 900;
 }
 
 @media (max-width: 1050px) {
@@ -989,11 +1203,22 @@ button:focus-visible {
     font-size: 12px;
   }
 
-  .match-controls {
-    overflow-x: auto;
+  .match-action-bar {
+    flex-wrap: wrap;
   }
 
-  .possession-chip {
+  .speed-control {
+    width: 100%;
+    justify-content: center;
+    margin-left: 0;
+    padding-top: 2px;
+  }
+
+  .halftime-banner {
+    padding: 14px;
+  }
+
+  .halftime-score {
     display: none;
   }
 
@@ -1014,7 +1239,7 @@ button:focus-visible {
     height: 7px;
   }
 
-  .phaser-badge {
+  .pitch-label {
     display: none;
   }
 
@@ -1067,22 +1292,12 @@ button:focus-visible {
   .competition-line {
     font-size: 7px;
   }
-}
 
-
-/* Match controls — explicit pause/resume state */
-.icon-button.resume-button {
-  border-color: #5fb879;
-  background: #173120;
-  color: #a7f7bb;
-}
-
-.live-pill.paused-pill {
-  border-color: #5b4930;
-  color: #d5bd91;
-}
-
-.live-pill.paused-pill i {
-  background: #d4a65f;
-  box-shadow: 0 0 0 4px rgba(212, 166, 95, 0.09);
+  .engine-error {
+    left: 9px;
+    right: 9px;
+    bottom: 9px;
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
