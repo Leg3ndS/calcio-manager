@@ -1070,7 +1070,7 @@ button:focus-visible {
 }
 
 
-/* Match controls â explicit pause/resume state */
+/* Match controls — explicit pause/resume state */
 .icon-button.resume-button {
   border-color: #5fb879;
   background: #173120;
