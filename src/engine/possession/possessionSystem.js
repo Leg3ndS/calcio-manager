@@ -18,7 +18,6 @@ function getReferee(state, rng) {
   return referee;
 }
 
-
 const POSSESSION = {
   HOME: "home",
   AWAY: "away",
@@ -246,7 +245,7 @@ function setPossession(state, side, playerId, options = {}) {
   state._lastPossessionPlayerId = player.id;
 
   if (!options.silent) {
-    emit( options.emitEvent, "POSSESSION_WON", { side: resolvedSide, playerId: player.id, reason: options.reason || "recovery" }, options.causedBy || null );
+    emit(options.emitEvent, "POSSESSION_WON", { side: resolvedSide, playerId: player.id, reason: options.reason || "recovery" }, options.causedBy || null);
   }
   return true;
 }
@@ -369,8 +368,6 @@ function executePass(state, player, decision, rng, emitEvent) {
   state.ball.state = "loose";
   emit(emitEvent, "PASS_FAILED", { passerId: player.id, receiverId: receiver.id, probability: finalProbability, roll, x: loose.x, y: loose.y }, player.id);
 
-  // The referee resolves the loose-ball situation instead of leaving a
-  // stale team possession behind. This is deterministic for the same seed.
   const referee = getReferee(state, rng);
   const ruling = referee.decideLooseBall(state, { reason: "pass_failed" });
   emit(emitEvent, "REFEREE_DECISION", { decision: ruling.type, reason: ruling.reason, playerId: ruling.playerId ?? null, side: ruling.side ?? null, confidence: ruling.confidence ?? null }, ruling.playerId ?? player.id);
@@ -408,8 +405,6 @@ function executeDribble(state, player, decision, rng, emitEvent) {
     return { executed: true, result: "completed" };
   }
   if (opponent) {
-    // The referee still evaluates the contact outcome in the future tackle
-    // layer; for a pure failed dribble the nearest opponent wins the ball.
     setPossession(state, getPlayerSide(state, opponent), opponent.id, { silent: true });
     emit(emitEvent, "DRIBBLE_FAILED", { playerId: player.id, opponentId: opponent.id, probability, roll }, opponent.id);
     emit(emitEvent, "POSSESSION_WON", { side: getPlayerSide(state, opponent), playerId: opponent.id, reason: "dribble_failed" }, opponent.id);
@@ -463,9 +458,6 @@ function executeShoot(state, player, decision, rng, emitEvent) {
 
   if (roll > probability) {
     emit(emitEvent, "SHOT_MISSED", { playerId: player.id, probability, roll }, player.id);
-
-    // A missed shot that goes out is not an indefinite loose ball:
-    // the referee awards a goal kick to the defending team.
     clearPossession(state, { contested: false });
     setBallPosition(state, pos);
     state.ball.state = "goal_kick";
@@ -508,80 +500,7 @@ function chooseKickoffPlayer(state, side) {
   return candidates.slice().sort((a, b) => distance(playerPosition(a), { x: 0.5, y: 0.5 }) - distance(playerPosition(b), { x: 0.5, y: 0.5 }))[0];
 }
 
-function resetAfterGoal(state, scoringSide, rng, emitEvent, scorer) {
-  const restartSide = scoringSide === "home" ? "away" : "home";
-  const kickoffPlayer = chooseKickoffPlayer(state, restartSide);
-  const center = { x: 0.5, y: 0.5 };
-
-  if (state.score) state.score[scoringSide] = num(state.score[scoringSide], 0) + 1;
-  const scoringTeam = state.teams?.[scoringSide];
-  if (scoringTeam?.matchStats) scoringTeam.matchStats.goals = num(scoringTeam.matchStats.goals, 0) + 1;
-  if (scorer?.matchStats) scorer.matchStats.goals = num(scorer.matchStats.goals, 0) + 1;
-  if (scorer) {
-    scorer.goals = num(scorer.goals, 0) + 1;
-    scorer.matchState = scorer.matchState || {};
-    scorer.matchState.lastGoalMinute = state.clock?.minute ?? null;
-  }
-
-  if (kickoffPlayer) {
-    kickoffPlayer.position = center;
-    kickoffPlayer.actualPosition = center;
-    kickoffPlayer.targetPosition = center;
-    kickoffPlayer.matchState = kickoffPlayer.matchState || {};
-    kickoffPlayer.matchState.actualPosition = center;
-    kickoffPlayer.matchState.targetPosition = center;
-  }
-
-  if (state.ball) {
-    state.ball.x = center.x;
-    state.ball.y = center.y;
-    state.ball.position = center;
-    state.ball.targetX = center.x;
-    state.ball.targetY = center.y;
-    state.ball.velocityX = 0;
-    state.ball.velocityY = 0;
-    state.ball.height = 0;
-    state.ball.state = "kickoff";
-    state.ball.lastTouchPlayerId = scorer?.id || null;
-  }
-
-  state._possessionCooldowns = {};
-  state._contestedSince = null;
-  state._lastPossessionChangeTime = now(state);
-
-  if (kickoffPlayer) {
-    setPossession(state, restartSide, kickoffPlayer.id, { silent: true });
-    // setPossession attaches the ball to the player; put it back on the center spot.
-    setBallPosition(state, center);
-    state.ball.state = "kickoff";
-    state.ball.ownerId = kickoffPlayer.id;
-    state.ball.ownerSide = restartSide;
-  } else {
-    clearPossession(state, { contested: false });
-    setBallPosition(state, center);
-    state.possession = restartSide;
-    state.possessionSide = restartSide;
-    state.possessionPlayerId = null;
-    state.ball.state = "kickoff";
-  }
-
-  state.phase = "kickoff";
-  state.matchStatus = state.matchStatus || {};
-  state.matchStatus.lastGoalSide = scoringSide;
-  state.matchStatus.lastGoalPlayerId = scorer?.id || null;
-  state.matchStatus.kickoffSide = restartSide;
-
-  emit(emitEvent, "KICKOFF", {
-    side: restartSide,
-    playerId: kickoffPlayer?.id || null,
-    score: { home: num(state.score?.home), away: num(state.score?.away) },
-    reason: "after_goal",
-  }, kickoffPlayer?.id || null);
-}
-
 function applyGoal(state, side, scorer, rng, emitEvent, probability, roll) {
-  // Score is part of the simulation state, not only the UI.
-  // Update it BEFORE emitting GOAL so every listener sees the new result.
   if (state.score) state.score[side] = num(state.score[side], 0) + 1;
   const team = state.teams?.[side];
   if (team?.matchStats) team.matchStats.goals = num(team.matchStats.goals, 0) + 1;
@@ -597,7 +516,6 @@ function applyGoal(state, side, scorer, rng, emitEvent, probability, roll) {
     score: { home: num(state.score?.home), away: num(state.score?.away) },
   }, scorer.id);
 
-  // resetAfterGoal must not increment the score a second time.
   const restartSide = side === "home" ? "away" : "home";
   const kickoffPlayer = chooseKickoffPlayer(state, restartSide);
   const center = { x: 0.5, y: 0.5 };
@@ -695,6 +613,13 @@ function executeAction(state, player, decision, rng, emitEvent) {
   }
 }
 
+function emitAIActionResolved(emitEvent, payload) {
+  emit(emitEvent, "AI_ACTION_RESOLVED", {
+    version: 1,
+    ...payload,
+  }, payload.playerId ?? null);
+}
+
 function processPossession({ state, rng, emitEvent, decisions = {}, spatialGrid = null, tacticalInstructions = null }) {
   if (!state) return null;
   normalizeRuntimeState(state);
@@ -714,19 +639,62 @@ function processPossession({ state, rng, emitEvent, decisions = {}, spatialGrid 
   const side = getPlayerSide(state, owner);
   if (!side) return null;
 
+  const possessionBefore = state.possession;
+  const ownerBefore = owner.id;
+  const pressureBefore = pressure(state, owner);
   const decision = decisions[owner.id] || decisions[String(owner.id)] || owner.aiDecision || owner.matchState?.decision || owner.currentDecision || null;
+
   if (!decision) {
     setBallPosition(state, playerPosition(owner));
+    emitAIActionResolved(emitEvent, {
+      playerId: owner.id,
+      decision: null,
+      originalAction: null,
+      action: ACTIONS.HOLD,
+      targetPlayerId: null,
+      decisionScore: null,
+      decisionProbability: null,
+      execution: false,
+      result: "no_decision",
+      pressureBefore,
+      possessionBefore,
+      ownerBefore,
+      possessionAfter: state.possession,
+      ownerAfter: state.ball?.ownerId ?? null,
+    });
     return { playerId: owner.id, side, action: ACTIONS.HOLD, executed: false, reason: "no_decision" };
   }
 
+  const originalAction = decisionAction(decision);
   let effective = decision;
   const allowed = tacticalInstructions?.allowedActions || tacticalInstructions?.actions;
-  if (Array.isArray(allowed) && allowed.length && !allowed.includes(decisionAction(decision))) effective = { ...decision, action: ACTIONS.HOLD };
+  if (Array.isArray(allowed) && allowed.length && !allowed.includes(originalAction)) effective = { ...decision, action: ACTIONS.HOLD };
 
   const action = decisionAction(effective);
+  const targetPlayerId = decisionTarget(effective) || decisionTarget(decision) || null;
+  const decisionScore = Number.isFinite(Number(decision?.score)) ? Number(decision.score) : null;
+  const decisionProb = decisionProbability(decision);
+
   if (onCooldown(state, owner.id) || [ACTIONS.NONE, ACTIONS.MOVE, ACTIONS.SUPPORT, ACTIONS.PRESS].includes(action)) {
     setBallPosition(state, playerPosition(owner));
+    const possessionAfter = state.possession;
+    const ownerAfter = state.ball?.ownerId ?? null;
+    emitAIActionResolved(emitEvent, {
+      playerId: owner.id,
+      decision: originalAction,
+      originalAction,
+      action,
+      targetPlayerId,
+      decisionScore,
+      decisionProbability: decisionProb,
+      execution: false,
+      result: "cooldown_or_non_execution",
+      pressureBefore,
+      possessionBefore,
+      ownerBefore,
+      possessionAfter,
+      ownerAfter,
+    });
     return { playerId: owner.id, side, action, executed: false, reason: "cooldown_or_non_execution" };
   }
 
@@ -734,7 +702,31 @@ function processPossession({ state, rng, emitEvent, decisions = {}, spatialGrid 
   setCooldown(state, owner.id, action === ACTIONS.PASS ? PASS_COOLDOWN_SECONDS : ACTION_COOLDOWN_SECONDS);
 
   if (state.ball?.ownerId) syncOwnerFromState(state, emitEvent);
-  return { playerId: owner.id, side, action, pressure: pressure(state, owner), result };
+
+  const possessionAfter = state.possession;
+  const ownerAfter = state.ball?.ownerId ?? null;
+  const resultName = result?.result || (result?.executed === false ? "not_executed" : "unknown");
+  const probability = result?.probability ?? null;
+
+  emitAIActionResolved(emitEvent, {
+    playerId: owner.id,
+    decision: originalAction,
+    originalAction,
+    action,
+    targetPlayerId,
+    decisionScore,
+    decisionProbability: decisionProb,
+    execution: result?.executed === true,
+    result: resultName,
+    probability: Number.isFinite(Number(probability)) ? Number(probability) : null,
+    pressureBefore,
+    possessionBefore,
+    ownerBefore,
+    possessionAfter,
+    ownerAfter,
+  });
+
+  return { playerId: owner.id, side, action, pressure: pressureBefore, result };
 }
 
 export {
