@@ -170,7 +170,7 @@ export function resolveDuel({ state, attacker, defender, emitEvent, referee = nu
   // Lo stesso contatto non puo' generare un nuovo duello a ogni tick.
   if (previous?.pairKey === pairKey) {
     const ticksSince = tick - num(previous.tick, tick);
-    if (separation < .085 && ticksSince < 2) return null;
+    if (separation < .085 && ticksSince < 8) return null;
   }
 
   const geometry = pressureGeometry(attacker, defender, state.ball);
