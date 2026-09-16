@@ -55,7 +55,7 @@ export class MatchEngine{
  resume(){if(this.state.matchStatus.finished)return;this.running=true;this.state.clock.paused=false;this.state.phase=MATCH_PHASES.OPEN_PLAY}
  stop(){this.running=false;this.state.clock.paused=true}
  setSpeed(s){s=Number(s);this.state.clock.speed=[1,2,4,8].includes(s)?s:1}
- update(ms){if(!this.running||this.state.matchStatus.finished)return;this.acc+=Math.max(0,Math.min(250,ms))/1000*this.state.clock.speed;let n=0;while(this.acc>=DT&&n++<40){this.acc-=DT;this.step()}this.sync()}
+ update(ms){if(!this.running||this.state.matchStatus.finished)return;this.acc+=Math.max(0,Math.min(250,ms))/1000*this.state.clock.speed;let n=0;while(this.acc>=DT&&n++<40&&!this.state.matchStatus.finished){this.acc-=DT;this.step()}this.sync()}
  step(){
   this.tick++;this.sim+=DT;this.state.clock.totalSeconds=Math.min(5400,this.sim);this.state.clock.minute=Math.floor(this.sim/60);this.state.clock.second=Math.floor(this.sim%60);
   if(this.sim>=2700&&this.state.clock.half===1){this.halfTime();return}if(this.sim>=5400){this.fullTime();return}

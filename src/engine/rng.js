@@ -58,6 +58,11 @@ export class RNG {
     return min + this.next() * (max - min);
   }
 
+  /** Compatibilità con il Match Engine. */
+  nextFloat(min = 0, max = 1) {
+    return this.float(min, max);
+  }
+
   /**
    * Intero casuale incluso tra min e max.
    */
