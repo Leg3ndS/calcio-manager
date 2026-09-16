@@ -81,6 +81,10 @@ export function simulateMatch({
     !engine.getState()
       .matchStatus.finished
   ) {
+    if (engine.getState().phase === "half_time") {
+      engine.startSecondHalf();
+    }
+
     engine.update(100);
 
     safetyCounter += 1;
